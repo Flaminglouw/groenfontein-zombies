@@ -159,6 +159,39 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
 
 <script>
 'use strict';
+/* ============================== VERENIGBAARHEID & OMVAL-BESKERMING ============================== */
+// roundRect bestaan eers vanaf Chrome 99 / Safari 16 — ouer fone val om daarsonder
+if(!CanvasRenderingContext2D.prototype.roundRect){
+  CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+    if(typeof r!=='number'||!(r>0))r=0;
+    r=Math.min(r,Math.abs(w)/2,Math.abs(h)/2);
+    this.moveTo(x+r,y);
+    this.arcTo(x+w,y,x+w,y+h,r);
+    this.arcTo(x+w,y+h,x,y+h,r);
+    this.arcTo(x,y+h,x,y,r);
+    this.arcTo(x,y,x+w,y,r);
+    this.closePath();
+    return this;
+  };
+}
+// as iets breek: stoor die lopie, herlaai een keer, en herstel — in plaas van 'n vrek spel
+window.addEventListener('error',ev=>{
+  try{
+    localStorage.setItem('dbgz_lasterr',(ev.message||'?').slice(0,200)+' @r'+(ev.lineno||'?'));
+    if(typeof snapSave==='function'&&typeof G!=='undefined'&&G&&typeof scr!=='undefined'&&scr==='play')snapSave();
+    const n=+(sessionStorage.getItem('dbgz_crashn')||0)+1;
+    sessionStorage.setItem('dbgz_crashn',String(n));
+    if(n<=2){location.reload();return;}
+    // derde keer binne dieselfde sessie: wys die fout sodat dit ge-screenshot kan word
+    const d=document.createElement('div');
+    d.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(8,12,6,.95);color:#ece5cc;font-family:monospace;padding:30px;text-align:center';
+    d.innerHTML='<h2 style="color:#c05038">EINA — iets het gebreek</h2>'+
+      '<p style="margin:14px 0;font-size:14px;word-break:break-all">'+String(ev.message||'onbekend').replace(/[<>&]/g,'')+' (reël '+(ev.lineno||'?')+')</p>'+
+      '<p style="color:#9aa07f;font-size:13px">Neem ’n skermkiekie hiervan en stuur dit vir Louw.</p>'+
+      '<button onclick="sessionStorage.removeItem(\'dbgz_crashn\');location.reload()" style="margin-top:16px;font-size:18px;padding:8px 20px;background:#222c19;color:#e0b64f;border:2px solid #e0b64f;cursor:pointer">Herlaai</button>';
+    document.body.appendChild(d);
+  }catch(_){}
+});
 /* ============================== HELPERS ============================== */
 const TAU=Math.PI*2, R=Math.random;
 const clamp=(v,a,b)=>v<a?a:v>b?b:v;
@@ -1174,6 +1207,7 @@ function update(dt){
   G.time+=dt;
   if(G.spin&&(G.spin.t-=dt)<=0)G.spin=null;
   const t=G.time;
+  if(!G.crashReset&&t>20){G.crashReset=true;try{sessionStorage.removeItem('dbgz_crashn');}catch(_){}}
   if(!G.dawnShown&&t>=600){G.dawnShown=true;banner('DAGBREEK!');SND.lvl();}
   if(!G.nightShown&&t>=750){G.nightShown=true;banner('DIE NAG KOM WEER...');SND.boss();}
   // beweeg
