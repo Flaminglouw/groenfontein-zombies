@@ -176,19 +176,20 @@ if(!CanvasRenderingContext2D.prototype.roundRect){
 }
 // as iets breek: stoor die lopie, herlaai een keer, en herstel — in plaas van 'n vrek spel
 window.addEventListener('error',ev=>{
+  // herstel mag nooit van berging afhang nie: elke stap in sy eie try
+  try{ if(typeof snapSave==='function'&&typeof G!=='undefined'&&G&&typeof scr!=='undefined'&&scr==='play')snapSave(); }catch(_){}
+  let n=0; // 0 = berging geblok, teller kan nie 'n herlaai oorleef nie → geen outo-herlaai
+  try{ n=+(sessionStorage.getItem('dbgz_crashn')||0)+1; sessionStorage.setItem('dbgz_crashn',String(n)); }catch(_){ n=0; }
+  if(n>=1&&n<=2){location.reload();return;}
+  try{ localStorage.setItem('dbgz_lasterr',(ev.message||'?').slice(0,200)+' @r'+(ev.lineno||'?')); }catch(_){}
   try{
-    localStorage.setItem('dbgz_lasterr',(ev.message||'?').slice(0,200)+' @r'+(ev.lineno||'?'));
-    if(typeof snapSave==='function'&&typeof G!=='undefined'&&G&&typeof scr!=='undefined'&&scr==='play')snapSave();
-    const n=+(sessionStorage.getItem('dbgz_crashn')||0)+1;
-    sessionStorage.setItem('dbgz_crashn',String(n));
-    if(n<=2){location.reload();return;}
     // derde keer binne dieselfde sessie: wys die fout sodat dit ge-screenshot kan word
     const d=document.createElement('div');
     d.style.cssText='position:fixed;inset:0;z-index:999;background:rgba(8,12,6,.95);color:#ece5cc;font-family:monospace;padding:30px;text-align:center';
     d.innerHTML='<h2 style="color:#c05038">EINA — iets het gebreek</h2>'+
       '<p style="margin:14px 0;font-size:14px;word-break:break-all">'+String(ev.message||'onbekend').replace(/[<>&]/g,'')+' (reël '+(ev.lineno||'?')+')</p>'+
       '<p style="color:#9aa07f;font-size:13px">Neem ’n skermkiekie hiervan en stuur dit vir Louw.</p>'+
-      '<button onclick="sessionStorage.removeItem(\'dbgz_crashn\');location.reload()" style="margin-top:16px;font-size:18px;padding:8px 20px;background:#222c19;color:#e0b64f;border:2px solid #e0b64f;cursor:pointer">Herlaai</button>';
+      '<button onclick="try{sessionStorage.removeItem(\'dbgz_crashn\');sessionStorage.removeItem(\'dbgz_run\')}catch(e){}location.reload()" style="margin-top:16px;font-size:18px;padding:8px 20px;background:#222c19;color:#e0b64f;border:2px solid #e0b64f;cursor:pointer">Herlaai</button>';
     document.body.appendChild(d);
   }catch(_){}
 });
@@ -231,24 +232,30 @@ function persist(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(SAVE));}catc
 /* ============================== AUDIO ============================== */
 let AC=null;
 function ac(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}return AC}
+let toneN=0,toneWin=0;
 function tone(f,dur,type,vol,slide,delay){
   if(SAVE.muted)return;const a=ac();if(!a)return;
+  // begroting: massasterftes mag nie honderde ossillators in een raam skep nie (vries + vasgehaakte klank op fone)
+  const nw=performance.now();
+  if(nw-toneWin>60){toneWin=nw;toneN=0;}
+  if(++toneN>8)return;
   if(a.state==='suspended')a.resume();
   const t0=a.currentTime+(delay||0);
   const o=a.createOscillator(),g=a.createGain();
   o.type=type||'square';o.frequency.setValueAtTime(f,t0);
   if(slide)o.frequency.exponentialRampToValueAtTime(Math.max(30,f+slide),t0+dur);
   g.gain.setValueAtTime(vol||.08,t0);g.gain.exponentialRampToValueAtTime(.0001,t0+dur);
+  o.onended=()=>{try{o.disconnect();g.disconnect();}catch(_){}};
   o.connect(g);g.connect(a.destination);o.start(t0);o.stop(t0+dur+.02);
 }
-let lastShoot=0;
+let lastShoot=0,lastZdie=0;
 const SND={
   shoot(){const n=performance.now();if(n-lastShoot<70)return;lastShoot=n;tone(680,.05,'square',.03,-260)},
   slash(){tone(240,.08,'sawtooth',.04,-120)},
   gem(){tone(880,.07,'sine',.05,220)},
   coin(){tone(1150,.09,'sine',.06,150);tone(1500,.08,'sine',.04,120,.05)},
   hurt(){tone(110,.18,'sawtooth',.1,-60)},
-  zdie(){tone(160,.1,'triangle',.05,-90)},
+  zdie(){const n=performance.now();if(n-lastZdie<60)return;lastZdie=n;tone(160,.1,'triangle',.05,-90)},
   lvl(){tone(520,.09,'square',.06);tone(660,.09,'square',.06,0,.09);tone(880,.14,'square',.06,0,.18)},
   boom(){tone(70,.25,'sawtooth',.12,-30)},
   boss(){tone(60,.6,'sawtooth',.14,25);tone(90,.5,'square',.08,20,.1)},
@@ -399,6 +406,11 @@ const DEATH_LINES=['Die veld is stil vanaand.','Groenfontein onthou.','Die windp
 /* ============================== CANVAS ============================== */
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 let VW=0,VH=0,DPR=1,vign=null,darkCv=null,darkCtx=null;
+// een keer gebak: wit lig-kol wat as prent gestempel word i.p.v. 'n gradiënt per lig per raam
+const lightSpr=document.createElement('canvas');lightSpr.width=lightSpr.height=128;
+{const lg=lightSpr.getContext('2d'),lgr=lg.createRadialGradient(64,64,0,64,64,64);
+ lgr.addColorStop(0,'rgba(255,255,255,1)');lgr.addColorStop(.55,'rgba(255,255,255,.85)');lgr.addColorStop(1,'rgba(255,255,255,0)');
+ lg.fillStyle=lgr;lg.fillRect(0,0,128,128);}
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
   VW=window.innerWidth;VH=window.innerHeight;
@@ -777,6 +789,7 @@ function killZombie(z){
     banner(z.variant==='alicia'?'ALICIA IS WEG. TOTSIENS.':z.variant==='jan'?'JAN SE GEHEIM IS VEILIG.':'SKAAP RAM IS NEER!');
     SND.boom();
     tryEvolve();
+    markSeen('b',z.variant||'ram');
     G.genadeReady=true;G.pend++; // baas laat val 'n Genade-kaart
   }else{
     G.gems.push({x:z.x+rand(-6,6),y:z.y+rand(-6,6),v:z.xp*(z.elite?3:1)});
@@ -796,6 +809,7 @@ function killZombie(z){
         banner('DIE KLOMP IS UIT!');SND.boom();
         G.drops.push({x:z.x+15,y:z.y,k:'munte',v:40});
         tryEvolve();
+        markSeen('b','hoede');
         G.genadeReady=true;G.pend++;
       }
     }
@@ -857,7 +871,7 @@ function aimDir(){
 }
 const skipSet=new Set();
 function fireWeapon(w,dt){
-  const T=WEAPONS[w.id].t[w.lvl-1];
+  const tiers=WEAPONS[w.id].t, T=tiers[Math.min(w.lvl,tiers.length)-1]; // vasklem: ou kiekies kan bo-vlak wapens dra
   // ===== SUPER-WAPENS =====
   if(w.id==='diewet'){ // Donderhamer + Ou Ses
     w.cd-=dt;if(w.cd>0)return;
@@ -1049,7 +1063,7 @@ function fireWeapon(w,dt){
       const d=Math.sqrt(dist2(G.x,G.y,z.x,z.y));
       if(d>range+z.r)continue;
       let za=Math.atan2(z.y-G.y,z.x-G.x)-a;
-      while(za>Math.PI)za-=TAU;while(za<-Math.PI)za+=TAU;
+      za=((za+Math.PI)%TAU+TAU)%TAU-Math.PI;
       if(Math.abs(za)<arc/2){
         hit=true;
         wHit(z,T.dmg*G.dmgMul*(w.evo?1.3:1),(z.x-G.x)/Math.max(1,d)*T.kb,(z.y-G.y)/Math.max(1,d)*T.kb,false);
@@ -1122,7 +1136,7 @@ function fireWeapon(w,dt){
         const d=Math.sqrt(dist2(G.x,G.y,z.x,z.y));
         if(d>T.range+z.r)continue;
         let za=Math.atan2(z.y-G.y,z.x-G.x)-a;
-        while(za>Math.PI)za-=TAU;while(za<-Math.PI)za+=TAU;
+        za=((za+Math.PI)%TAU+TAU)%TAU-Math.PI;
         if(Math.abs(za)<T.arc/2){
           bladeHit(z,T.dmg*G.dmgMul,(z.x-G.x)*.09,(z.y-G.y)*.09);
           if(w.evo&&!z.dead)z.bleed={t:2,dps:T.dmg*G.dmgMul*.25};
@@ -1624,7 +1638,7 @@ function update(dt){
     f.tick-=dt;
     if(f.tick<=0){
       f.tick=.3;near(f.x,f.y,f.r+20,NB);
-      for(const z of NB)if(!z.dead&&z.ally<=0&&dist2(f.x,f.y,z.x,z.y)<(f.r+z.r)*(f.r+z.r))hurtZombie(z,f.dmg,0,0);
+      for(const z of NB)if(!z.dead&&!(z.ally>0)&&dist2(f.x,f.y,z.x,z.y)<(f.r+z.r)*(f.r+z.r))hurtZombie(z,f.dmg,0,0);
     }
   }
   if(G.poolTick>0)G.poolTick-=dt;
@@ -1785,13 +1799,13 @@ function die(){
 /* ============================== LEVEL-UP ============================== */
 function buildChoices(){
   const pool=[];
-  for(const w of G.weapons)if(w.lvl<WEAPON_MAX)
+  for(const w of G.weapons)if(!WEAPONS[w.id].super&&w.lvl<WEAPON_MAX)
     pool.push({kind:'w',id:w.id,nu:false,lvl:w.lvl+1});
   for(const id in G.passives)if(G.passives[id]<PASSIVE_MAX)
     pool.push({kind:'p',id,nu:false,lvl:G.passives[id]+1});
   if(G.weapons.length<MAX_W)
-    for(const id in WEAPONS)if(!G.weapons.find(w=>w.id===id))
-      pool.push({kind:'w',id,nu:true,lvl:1});
+    for(const id in WEAPONS)if(!WEAPONS[id].super&&!G.weapons.find(w=>w.id===id))
+      pool.push({kind:'w',id,nu:true,lvl:1}); // supers NET via SAAMSMELT/R4
   if(Object.keys(G.passives).length<MAX_P)
     for(const id in PASSIVES){
       if(id in G.passives)continue;
@@ -2544,26 +2558,26 @@ function render(){
     const lights=[{x:G.x,y:G.y,r:(G.power?330:255)+flick}];
     if(G.power)for(const L of HOME_LIGHTS)lights.push({x:L.x,y:L.y,r:L.r+flick*.7});
     if(G.pompFlash>0)lights.push({x:1758,y:1360,r:200+G.pompFlash*420});
-    for(const p of G.projs){
-      if(p.k==='vlam')lights.push({x:p.x,y:p.y,r:55});
-      else if(p.k==='pellet')lights.push({x:p.x,y:p.y,r:34});
-    }
-    for(const p of G.eprojs)lights.push({x:p.x,y:p.y,r:28});
-    for(const f of G.fires)lights.push({x:f.x,y:f.y,r:60});
     if(G.decoy)lights.push({x:G.decoy.x,y:G.decoy.y,r:150});
-    for(const p of G.parts)if(p.tp==='ring')lights.push({x:p.x,y:p.y,r:p.r1*(p.t/p.life)+80});
+    for(const f of G.fires){if(lights.length>44)break;lights.push({x:f.x,y:f.y,r:60});}
+    for(const p of G.parts)if(p.tp==='ring'){if(lights.length>44)break;lights.push({x:p.x,y:p.y,r:p.r1*(p.t/p.life)+80});}
+    // outovuur-evolusies spoeg 50+ koeëls/s — dun die liggies uit, hulle oorvleuel in elk geval
+    const many=G.projs.length>20;let pi=0;
+    for(const p of G.projs){
+      if(lights.length>44)break;
+      if(p.k==='vlam'){if(!many||(pi++%2===0))lights.push({x:p.x,y:p.y,r:55});}
+      else if(p.k==='pellet'){if(!many||(pi++%3===0))lights.push({x:p.x,y:p.y,r:34});}
+    }
+    for(const p of G.eprojs){if(lights.length>50)break;lights.push({x:p.x,y:p.y,r:28});}
     for(const g of G.gems){
+      if(lights.length>60)break;
       if(g.x<camX-14||g.x>camX+VW+14||g.y<camY-14||g.y>camY+VH+14)continue;
       lights.push({x:g.x,y:g.y,r:24});
     }
     for(const l of lights){
       const sx=l.x-camX,sy=l.y-camY;
       if(sx<-l.r||sx>VW+l.r||sy<-l.r||sy>VH+l.r)continue;
-      const gr=dc.createRadialGradient(sx,sy,0,sx,sy,l.r);
-      gr.addColorStop(0,'rgba(255,255,255,1)');
-      gr.addColorStop(.55,'rgba(255,255,255,.85)');
-      gr.addColorStop(1,'rgba(255,255,255,0)');
-      dc.fillStyle=gr;dc.beginPath();dc.arc(sx,sy,l.r,0,TAU);dc.fill();
+      dc.drawImage(lightSpr,sx-l.r,sy-l.r,l.r*2,l.r*2);
     }
     ctx.globalAlpha=na;ctx.drawImage(darkCv,0,0,VW,VH);ctx.globalAlpha=1;
     // gloeiende oë in die donker
@@ -2818,9 +2832,10 @@ function renderBoard(){
   }
 }
 /* ============================== LOPIE-HERSTEL ============================== */
+const SNAP_V=2; // bots as wapen/passief-ids of vlakke verander tussen weergawes
 function snapSave(){
   if(!G||(scr!=='play'&&scr!=='lvl')||G.dying!=null)return;
-  const s={ts:Date.now(),time:G.time,hp:G.hp,lvl:G.lvl,xp:G.xp,x:G.x,y:G.y,
+  const s={v:SNAP_V,ts:Date.now(),time:G.time,hp:G.hp,lvl:G.lvl,xp:G.xp,x:G.x,y:G.y,
     munte:G.munte,kills:G.kills,bossKills:G.bossKills,bossT:G.bossT,bossN:G.bossN,bossStage:G.bossStage,
     waveT:G.waveT,eventT:G.eventT,char:G.char.id,pend:G.pend,rerolls:G.rerolls,revived:G.revived,
     weapons:G.weapons.map(w=>({id:w.id,lvl:w.lvl,evo:!!w.evo})),passives:G.passives};
@@ -2832,15 +2847,20 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)snapSave();
 function tryResume(){
   try{
     const s=JSON.parse(sessionStorage.getItem('dbgz_run')||'null');
-    if(!s||Date.now()-s.ts>25000)return false;
+    if(!s||s.v!==SNAP_V||Date.now()-s.ts>25000)return false;
     const ch=CHARS.find(c=>c.id===s.char);if(!ch)return false;
     newGame(ch);lastChar=ch;
     G.time=s.time;G.lvl=s.lvl;G.xp=s.xp;G.x=s.x;G.y=s.y;G.munte=s.munte;G.kills=s.kills;
     G.bossKills=s.bossKills;G.bossT=s.bossT;G.bossN=s.bossN;G.bossStage=s.bossStage;
     G.waveT=s.waveT;G.eventT=s.eventT;G.revived=!!s.revived;
     G.weapons=[];G.dogs=[];
-    for(const w of s.weapons){addWeapon(w.id);const nw=G.weapons[G.weapons.length-1];nw.lvl=w.lvl;nw.evo=!!w.evo;}
-    G.passives=s.passives||{};
+    // moenie die kiekie blindelings vertrou nie: net bekende ids, vlakke vasgeklem
+    for(const w of s.weapons||[]){const def=WEAPONS[w.id];if(!def)continue;
+      addWeapon(w.id);const nw=G.weapons[G.weapons.length-1];
+      nw.lvl=clamp(w.lvl|0,1,def.t.length);nw.evo=!!w.evo&&!!EVOS[w.id];}
+    if(!G.weapons.length)return false;
+    G.passives={};const sp=s.passives||{};
+    for(const k in sp)if(PASSIVES[k])G.passives[k]=clamp(sp[k]|0,1,PASSIVE_MAX);
     rebuildDogs();recalc();
     G.hp=Math.min(s.hp,G.maxhp);
     G.pend=s.pend||0;G.rerolls=s.rerolls||0;
@@ -2980,7 +3000,16 @@ function renderGids(){
   }
   h+='</div>';
   h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:16px 0 6px">BOSSE</div>';
-  h+='<p style="font-size:17px;color:var(--dim);line-height:1.4">5min <b style="color:var(--ink);font-weight:400">Skaap Ram</b> · 10min <b style="color:var(--ink);font-weight:400">Die Klomp</b> · 20min <b style="color:var(--ink);font-weight:400">Alicia</b> · 30min <b style="color:var(--ink);font-weight:400">Jan</b>. Elke baas laat val ’n <span style="color:var(--red)">Genade</span>-kaart (maak alle gewone zombies dood).</p>';
+  const bossRoster=[['5:00','ram','Skaap Ram'],['10:00','hoede','Die Klomp'],['20:00','alicia','Alicia'],['30:00','jan','Jan']];
+  seen.b=seen.b||{};
+  let anyBoss=false;
+  h+='<p style="font-size:17px;color:var(--dim);line-height:1.5">';
+  h+=bossRoster.map(([tm,k,nm])=>{
+    if(seen.b[k]){anyBoss=true;return tm+' <b style="color:var(--ink);font-weight:400">'+esc(nm)+'</b>';}
+    return tm+' <span style="color:#5b614a">???</span>';
+  }).join(' · ');
+  h+='</p>';
+  if(anyBoss)h+='<p style="font-size:16px;color:var(--dim)">Elke baas laat val ’n <span style="color:var(--red)">Genade</span>-kaart (maak alle gewone zombies dood).</p>';
   b.innerHTML=h;
 }
 document.getElementById('bGids').onclick=()=>{renderGids();show('gids')};
@@ -3021,7 +3050,7 @@ cv.addEventListener('pointerdown',e=>{
   ac();
   joy.on=true;joy.id=e.pointerId;
   joy.ax=e.clientX;joy.ay=e.clientY;joy.dx=0;joy.dy=0;
-  cv.setPointerCapture(e.pointerId);
+  try{cv.setPointerCapture(e.pointerId);}catch(_){} // vinnige tik kan reeds los wees → NotFoundError
 });
 cv.addEventListener('pointermove',e=>{
   if(!joy.on||e.pointerId!==joy.id)return;
