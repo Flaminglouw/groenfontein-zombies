@@ -97,6 +97,15 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   <p class="hint">Druk 1, 2 of 3 — of klik. R: herrol.</p>
 </div></div>
 
+<div class="screen" id="scrName"><div class="panel" style="max-width:430px">
+  <div class="sub" style="color:var(--gold)">WIE SPEEL?</div>
+  <div style="margin:18px 0">
+    <input id="firstName" maxlength="14" placeholder="Jou naam" style="background:#222c19;border:2px solid var(--gold);color:var(--ink);font-family:inherit;font-size:24px;padding:6px 12px;width:220px;text-align:center">
+  </div>
+  <button class="btn" id="bNameGo">Speel</button>
+  <p class="hint">Jou naam gaan saam met jou telling op die telbord.</p>
+</div></div>
+
 <div class="screen" id="scrBoard"><div class="panel">
   <div class="sub" style="color:var(--gold)">TELBORD</div>
   <p class="hint" id="lbStatus" style="margin-top:6px"></p>
@@ -118,6 +127,7 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
     <span>Munte<b id="dMunte">+0</b></span>
   </div>
   <div class="record" id="dRecord" style="display:none">NUWE PLAASREKORD!</div>
+  <p class="hint" id="dRank" style="margin-top:10px"></p>
   <div style="margin-top:18px">
     <button class="btn" id="bAgain">Weer</button>
     <button class="btn ghost" id="bHome">Tuis</button>
@@ -1532,7 +1542,10 @@ function die(){
   const earned=Math.round(G.munte);
   SAVE.munte+=earned;SAVE.runs++;persist();
   snapClear();
-  lbSubmit({n:(SAVE.name||G.char.name),c:G.char.id,s:sc,t:Math.round(G.time),k:G.kills,d:Date.now(),p:SAVE.skillsOff?1:0});
+  const entry={n:(SAVE.name||G.char.name),c:G.char.id,s:sc,t:Math.round(G.time),k:G.kills,d:Date.now(),p:SAVE.skillsOff?1:0};
+  lbSubmit(entry);
+  const rank=(SAVE.board||[]).findIndex(x=>x.d===entry.d)+1;
+  document.getElementById('dRank').textContent=rank>0?('#'+rank+' op jou telbord as '+entry.n):'';
   document.getElementById('dFlavor').textContent=pick(DEATH_LINES);
   document.getElementById('dTime').textContent=fmtT(G.time);
   document.getElementById('dKills').textContent=fmt(G.kills);
@@ -2377,7 +2390,7 @@ function drawHUD(){
 }
 
 /* ============================== UI / SCREENS ============================== */
-const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard'};
+const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard',name:'scrName'};
 let screenAt=0;
 function show(name){
   scr=name;screenAt=performance.now();
@@ -2389,10 +2402,17 @@ function refreshMenu(){
   document.getElementById('bToggleSkills').textContent='Vaardighede: '+(SAVE.skillsOff?'AF':'AAN');
 }
 /* ============================== TELBORD ============================== */
+const LB_URL=''; // Firebase RTDB basis-URL (bv. https://xxx-default-rtdb.firebaseio.com) — maak die bord oral gedeel
 let LB={scores:[]}, lbShared=false, lbWritable=null;
 const CHAR_LETTER={louw:'L',altus:'A',danie:'D',pa:'P'};
 async function lbInit(){
-  try{
+  if(LB_URL){
+    try{
+      const r=await fetch(LB_URL+'/leaderboard.json',{cache:'no-store'});
+      if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores)){LB=j;}lbShared=true;lbWritable=true;}
+    }catch(e){}
+  }
+  if(!lbShared)try{
     const r=await fetch('data/leaderboard.json',{cache:'no-store'});
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores)){LB=j;lbShared=true;}}
   }catch(e){}
@@ -2410,12 +2430,24 @@ function lbLocalAdd(e){
 }
 async function lbSubmit(e,fromPending){
   if(!fromPending)lbLocalAdd(e);
+  const key=x=>x.n+'|'+x.s+'|'+x.d;
+  if(LB_URL){ // Firebase-pad: werk van enige weergawe af
+    try{localStorage.setItem('dbgz_pending',JSON.stringify(e));}catch(_){}
+    try{
+      const r=await fetch(LB_URL+'/leaderboard.json',{cache:'no-store'});
+      if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores))LB=j;}
+      if(!LB.scores.some(x=>key(x)===key(e)))LB.scores.push(e);
+      LB.scores.sort((a,b)=>b.s-a.s);LB.scores=LB.scores.slice(0,25);
+      const w=await fetch(LB_URL+'/leaderboard.json',{method:'PUT',body:JSON.stringify(LB)});
+      if(w.ok){lbShared=true;lbWritable=true;localStorage.removeItem('dbgz_pending');}
+    }catch(err){}
+    return;
+  }
   if(!(window.claude&&claude.use))return;
   try{localStorage.setItem('dbgz_pending',JSON.stringify(e));}catch(_){}
   try{
     const art=await claude.use('artifact');
     if(!art){localStorage.removeItem('dbgz_pending');return;}
-    const key=x=>x.n+'|'+x.s+'|'+x.d;
     if(!LB.scores.some(x=>key(x)===key(e)))LB.scores.push(e);
     LB.scores.sort((a,b)=>b.s-a.s);
     LB.scores=LB.scores.slice(0,25);
@@ -2549,7 +2581,18 @@ function startRun(c){
   newGame(c);
   show('play');
 }
-document.getElementById('bPlay').onclick=()=>{ac();buildCharCards();show('chars')};
+document.getElementById('bPlay').onclick=()=>{
+  ac();
+  if(!SAVE.name){show('name');setTimeout(()=>document.getElementById('firstName').focus(),50);}
+  else{buildCharCards();show('chars');}
+};
+function nameGo(){
+  const v=document.getElementById('firstName').value.trim().slice(0,14);
+  SAVE.name=v||'Speler';persist();
+  buildCharCards();show('chars');
+}
+document.getElementById('bNameGo').onclick=nameGo;
+document.getElementById('firstName').addEventListener('keydown',e=>{if(e.key==='Enter')nameGo();});
 document.getElementById('bSkills').onclick=()=>{buildSkillsList();show('skills')};
 document.getElementById('bBack1').onclick=()=>{refreshMenu();show('menu')};
 document.getElementById('bBack2').onclick=()=>{refreshMenu();show('menu')};
@@ -2567,6 +2610,7 @@ document.getElementById('plName').addEventListener('input',e=>{
 
 /* ============================== INPUT ============================== */
 window.addEventListener('keydown',e=>{
+  if(e.target&&e.target.tagName==='INPUT')return;
   const k=e.key.toLowerCase();
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(k))e.preventDefault();
   if(e.repeat)return;
