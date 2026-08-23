@@ -303,10 +303,10 @@ const PASSIVES={
  kruithoring:{name:'Kruithoring',desc:'+8% plofradius per rang.'},
  slypsteen:{name:'Slypsteen',desc:'Lemme: +5% kans op dubbelskade.'},
  wysheid:{name:'Wysheid',desc:'+10% XP per rang. Slim vang die plaas.'},
- selfdoen:{name:'Ek sal dit self doen',only:'pa',desc:'Net Pa. Vlam lukraak op: 5s dubbel skade, maar bloei 1%/s.'},
- poese:{name:'Poese!',only:'louw',desc:'Net Louw. Oorleef ’n doodshou en stamp als weg. Herlaai stadig.'},
- volgendeweek:{name:'Sien jou volgende week, meneer',only:'altus',desc:'Twyfel hou langer; Deurbraak keer meer om, vir langer.'},
- hoere:{name:'Hoere!',only:'danie',desc:'Net Danie. Vlam lukraak op: 3s blitsvinnig met ’n stofspoor.'},
+ selfdoen:{name:'Ek sal dit self doen',only:'pa',desc:'Net Pa. Woede vlam op: dubbel+ skade, bloei 1%/s. Elke rang: sterker, langer, gouer.'},
+ poese:{name:'Poese!',only:'louw',desc:'Net Louw. Oorleef ’n doodshou en stamp als weg. Elke rang: meer LP terug, groter knal, gouer.'},
+ volgendeweek:{name:'Sien jou volgende week, meneer',only:'altus',desc:'Twyfel hou langer; Deurbraak keer meer om, langer, harder. Elke rang sterker.'},
+ hoere:{name:'Hoere!',only:'danie',desc:'Net Danie. Blits vinnig met ’n stofspoor. Elke rang: vinniger, langer, gouer.'},
 };
 const EVOS={
  voorhamer:{pass:'boerewors',name:'Donderhamer',desc:'Elke swaai dreun met ’n skokgolf.'},
@@ -535,12 +535,15 @@ function damagePlayer(dmg){
   if(G.dnums.length<90)G.dnums.push({x:G.x,y:G.y-22,v:dmg,t:.7,hurt:true});
   if(G.hp<=0){
     if(G.passives.poese&&G.poeseCd<=0){ // Louw se laaste woord
-      G.poeseCd=90-10*G.passives.poese;
-      G.hp=15;G.inv=1.5;
+      const r=G.passives.poese; // sterker per rang
+      G.poeseCd=95-13*r;        // r1:82s → r5:30s
+      G.hp=10+8*r;              // r1:18 → r5:50 LP terug
+      G.inv=1.2+.4*r;           // r1:1.6s → r5:3.2s onaantasbaar
       banner('POESE!');SND.slam();
-      near(G.x,G.y,220,NB);
+      const br=200+30*r;
+      near(G.x,G.y,br,NB);
       for(const q of NB)if(!q.dead&&q.type!=='boss')
-        hurtZombie(q,10*G.dmgMul,(q.x-G.x)*.4,(q.y-G.y)*.4);
+        hurtZombie(q,(8+8*r)*G.dmgMul,(q.x-G.x)*.4,(q.y-G.y)*.4); // r1:16 → r5:48 knal
       boomParts(G.x,G.y,24,'#e0b64f');
       return;
     }
@@ -569,7 +572,7 @@ function recalc(){
   G.magnetR=95*(1+(p.magneet||0)*.25);
   G.areaMul=1+(p.kruithoring||0)*.08;
   G.critCh=(p.slypsteen||0)*.05;
-  if(G.rageT>0)G.dmgMul*=2; // Ek sal dit self doen
+  if(G.rageT>0)G.dmgMul*=(1.75+.25*(p.selfdoen||1)); // r1:×2 → r5:×3 skade
   if(G.enrageOn)G.dmgMul*=2; // woede oor die hoede
   if(G.janOn)G.dmgMul*=(G.char.id==='pa'||G.char.id==='louw')?.75:1.25; // Jan se effek
   if(G.maxhp>prevMax)G.hp+=G.maxhp-prevMax;
@@ -1063,7 +1066,7 @@ function update(dt){
   const [mx,my]=moveVec();
   G.moving=!!(mx||my)&&G.paralyzeT<=0;
   if(G.moving){
-    const dashMul=G.dashT>0?1.4+.04*(G.passives.hoere||0):1;
+    const dashMul=G.dashT>0?1.35+.06*(G.passives.hoere||0):1; // r1:×1.41 → r5:×1.65 spoed
     G.x+=mx*G.speed*dashMul*dt;G.y+=my*G.speed*dashMul*dt;
     G.face=[mx,my];G.walk+=dt*10;
   }
@@ -1146,8 +1149,10 @@ function update(dt){
       G.rageProc-=dt;
       if(G.rageProc<=0){
         G.rageProc=1;
-        if(R()<.015*G.passives.selfdoen){
-          G.rageT=5;G.rageCd=15;
+        const r=G.passives.selfdoen;
+        if(R()<.014*r){                 // meer gereeld per rang
+          G.rageT=4+r;                   // r1:5s → r5:9s woede
+          G.rageCd=Math.max(8,17-r);     // r1:16s → r5:12s af
           recalc();banner('EK SAL DIT SELF DOEN!');SND.slam();
           boomParts(G.x,G.y,16,'#ff5030');
         }
@@ -1167,8 +1172,10 @@ function update(dt){
       G.dashProc-=dt;
       if(G.dashProc<=0){
         G.dashProc=1;
-        if(R()<.015*G.passives.hoere){
-          G.dashT=3;G.dashCd=12;
+        const r=G.passives.hoere;
+        if(R()<.014*r){                 // meer gereeld per rang
+          G.dashT=2.5+.6*r;             // r1:3.1s → r5:5.5s blits
+          G.dashCd=Math.max(6,14-r);    // r1:13s → r5:9s af
           banner('HOERE!');SND.slash();
         }
       }
@@ -1311,7 +1318,7 @@ function update(dt){
         z.x+=(tgt.x-z.x)/dd*z.spd*1.2*dt;z.y+=(tgt.y-z.y)/dd*z.spd*1.2*dt;
         if(dd<z.r+tgt.r+3&&z.allyCd<=0){
           z.allyCd=.5;
-          hurtZombie(tgt,z.dmg*2,(tgt.x-z.x)*.05,(tgt.y-z.y)*.05);
+          hurtZombie(tgt,z.dmg*(2+.5*(G.passives.volgendeweek||0)),(tgt.x-z.x)*.05,(tgt.y-z.y)*.05);
         }
       }
     }
