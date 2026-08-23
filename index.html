@@ -2412,7 +2412,11 @@ async function lbInit(){
     const r=await fetch(SB_URL+'/rest/v1/scores?select=naam,karakter,telling,tyd,dooies,puur&order=telling.desc&limit=25',{headers:SB_H});
     if(r.ok){
       const rows=await r.json();
-      LB.scores=rows.map(x=>({n:x.naam,c:x.karakter,s:x.telling,t:x.tyd,k:x.dooies,p:x.puur?1:0}));
+      const num=(v,hi)=>{v=Number(v);return Number.isFinite(v)?clamp(v,0,hi):0;};
+      LB.scores=(Array.isArray(rows)?rows:[]).map(x=>({
+        n:String(x.naam==null?'?':x.naam).slice(0,16),
+        c:Object.prototype.hasOwnProperty.call(CHAR_LETTER,x.karakter)?x.karakter:'?',
+        s:num(x.telling,9e9),t:num(x.tyd,9e6),k:num(x.dooies,9e7),p:x.puur?1:0}));
       lbShared=true;lbWritable=true;
     }
   }catch(e){}
@@ -2450,12 +2454,18 @@ function renderBoard(){
     lbShared?'Gedeelde familie-bord — lewendig vir almal, oral.'
     :'Bord is tans vanlyn — tellings wag en pos outomaties later.';
   const box=document.getElementById('lbList');box.innerHTML='';
+  const mkspan=(cls,txt,style)=>{const s=document.createElement('span');s.className=cls;if(style)s.style.cssText=style;s.textContent=txt;return s;};
   const row=(medal,e)=>{
     const d=document.createElement('div');d.className='skill-row';
-    d.innerHTML='<span class="nm" style="min-width:34px">'+medal+'</span>'+
-      '<span class="nm" style="flex:1">'+String(e.n||'?').replace(/[<>&]/g,'')+' <span style="color:#6d7358">('+(CHAR_LETTER[e.c]||'?')+')</span>'+(e.p?' <span style="color:#7fc95e">★</span>':'')+'</span>'+
-      '<span class="ds" style="flex:0;min-width:60px">'+fmtT(e.t||0)+'</span>'+
-      '<span class="nm" style="color:var(--gold);min-width:80px;text-align:right">'+fmt(e.s)+'</span>';
+    d.appendChild(mkspan('nm',medal,'min-width:34px'));
+    // naam word as teks gebou (geen HTML), so ’n kwaai naam kan niks injekteer nie
+    const nm=mkspan('nm','','flex:1');
+    nm.appendChild(document.createTextNode(String(e.n==null?'?':e.n).slice(0,16)+' '));
+    nm.appendChild(mkspan('','('+(CHAR_LETTER[e.c]||'?')+')','color:#6d7358'));
+    if(e.p)nm.appendChild(mkspan('',' ★','color:#7fc95e'));
+    d.appendChild(nm);
+    d.appendChild(mkspan('ds',fmtT(e.t||0),'flex:0;min-width:60px'));
+    d.appendChild(mkspan('nm',fmt(e.s),'color:var(--gold);min-width:80px;text-align:right'));
     box.appendChild(d);
   };
   const meds=['🥇','🥈','🥉'];
