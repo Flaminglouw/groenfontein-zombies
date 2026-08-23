@@ -63,6 +63,13 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
 </style>
 
 <canvas id="cv"></canvas>
+<button id="bQuit" title="Uit na kieslys">❚❚</button>
+<style>
+#bQuit{position:fixed;top:6px;right:8px;z-index:6;width:30px;height:30px;display:none;
+  font-family:'VT323',monospace;font-size:16px;line-height:1;color:var(--gold);
+  background:rgba(10,14,7,.75);border:2px solid var(--line);cursor:pointer;padding:0}
+#bQuit:hover,#bQuit:focus-visible{border-color:var(--gold);outline:none}
+</style>
 
 <div class="screen on" id="scrMenu"><div class="panel">
   <h1>DRIE BROERS</h1>
@@ -115,6 +122,15 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   </div>
   <div class="skills-list" id="lbList"></div>
   <button class="btn ghost" id="bBack3" style="margin-top:16px">Terug</button>
+</div></div>
+
+<div class="screen" id="scrPause"><div class="panel" style="max-width:420px">
+  <div class="sub" style="color:var(--gold)">POUSE</div>
+  <p class="hint" style="margin-top:8px">Die plaas wag. Jou lopie eindig as jy uitgaan.</p>
+  <div style="margin-top:16px">
+    <button class="btn" id="bResume">Speel voort</button>
+    <button class="btn ghost" id="bQuitYes">Terug na kieslys</button>
+  </div>
 </div></div>
 
 <div class="screen" id="scrDead"><div class="panel dead-panel">
@@ -2301,7 +2317,7 @@ function drawHUD(){
   ctx.fillStyle='#ece5cc';ctx.fillText(fmtT(G.time),VW/2,44);
   // telling regs
   ctx.textAlign='right';ctx.font='21px VT323, monospace';
-  ctx.fillStyle='#e0b64f';ctx.fillText('Telling '+fmt(score()),VW-pad,32);
+  ctx.fillStyle='#e0b64f';ctx.fillText('Telling '+fmt(score()),VW-pad-34,32);
   ctx.fillStyle='#9aa07f';ctx.fillText('Dooies '+fmt(G.kills),VW-pad,52);
   ctx.fillStyle='#e0b64f';ctx.fillText('Munte '+fmt(G.munte),VW-pad,72);
   // wapen-ikone
@@ -2390,10 +2406,11 @@ function drawHUD(){
 }
 
 /* ============================== UI / SCREENS ============================== */
-const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard',name:'scrName'};
+const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard',name:'scrName',pause:'scrPause'};
 let screenAt=0;
 function show(name){
   scr=name;screenAt=performance.now();
+  const q=document.getElementById('bQuit');if(q)q.style.display=name==='play'?'block':'none';
   for(const k in SCREENS)document.getElementById(SCREENS[k]).classList.toggle('on',k===name);
 }
 function refreshMenu(){
@@ -2595,6 +2612,10 @@ document.getElementById('bToggleSkills').onclick=()=>{
   SAVE.skillsOff=!SAVE.skillsOff;persist();refreshMenu();SND.pick();
 };
 document.getElementById('bReroll').onclick=doReroll;
+function pauseGame(){if(scr==='play'){joy.on=false;joy.dx=joy.dy=0;snapSave();show('pause');}}
+document.getElementById('bQuit').onclick=pauseGame;
+document.getElementById('bResume').onclick=()=>{if(G)show('play');};
+document.getElementById('bQuitYes').onclick=()=>{G=null;snapClear();refreshMenu();show('menu');};
 document.getElementById('plName').addEventListener('input',e=>{
   SAVE.name=e.target.value.trim().slice(0,14);persist();
 });
@@ -2607,6 +2628,7 @@ window.addEventListener('keydown',e=>{
   if(e.repeat)return;
   if(k==='m'){SAVE.muted=!SAVE.muted;persist();return;}
   keys.add(k);
+  if((k==='escape'||k==='p')&&(scr==='play'||scr==='pause')){if(scr==='play')pauseGame();else if(G)show('play');return;}
   if(scr==='lvl'&&k==='r'){doReroll();return;}
   if(scr==='lvl'&&['1','2','3'].includes(k))pickChoice(+k-1);
   else if(scr==='chars'&&['1','2','3','4'].includes(k)&&CHARS[+k-1])startRun(CHARS[+k-1]);
