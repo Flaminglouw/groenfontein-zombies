@@ -296,6 +296,8 @@ const WEAPONS={
  voorhamer:{name:'Voorhamer',desc:'Swaai in ’n volle kring en stamp alles terug.',
   t:[{cd:1.6,dmg:16,range:82,kb:26},{cd:1.5,dmg:20,range:90,kb:28},{cd:1.35,dmg:25,range:98,kb:30},{cd:1.2,dmg:30,range:106,kb:33},{cd:1,dmg:38,range:118,kb:36,slam:1}],
   up:['+skade, wyer','+skade, wyer','+skade, vinniger','GRONDSLAG: skokgolf!']},
+ r4:{name:'R4',desc:'Pa se aanvalsgeweer. Drie-skoot sarsies wat deurboor.',super:true,
+  t:[{cd:.35,dmg:30,spd:700}]},
  diewet:{name:'Die Wet',desc:'Pa se wet: hamerslag + koeël-ring.',super:true,
   t:[{cd:.9,dmg:36,range:126,kb:40}]},
  diekudde:{name:'Die Kudde',desc:'Vier honde en ’n weerlose leër.',super:true,
@@ -529,7 +531,7 @@ function newGame(char){
     rageT:0, rageCd:0, rageProc:0, poeseCd:0, dashT:0, dashCd:0, dashProc:0, novaCd:0, novaProc:0,
   };
   addWeapon(char.weapon);
-  if(char.startPassives)for(const k in char.startPassives)G.passives[k]=char.startPassives[k];
+  if(char.startPassives)for(const k in char.startPassives){G.passives[k]=char.startPassives[k];markSeen('p',k);}
   scatterProps();
   recalc();G.hp=G.maxhp;
   G.rerolls=0;
@@ -611,6 +613,7 @@ function addWeapon(id){
   const w={id,lvl:1,cd:0,seq:0};
   G.weapons.push(w);
   if(id==='boerboel'||id==='diekudde')rebuildDogs();
+  markSeen('w',id);
   return w;
 }
 const DOG_SKINS=[
@@ -790,6 +793,7 @@ function tryEvolve(){
     if(E&&!w.evo&&w.lvl>=WEAPON_MAX&&G.passives[E.pass]){
       w.evo=true;
       if(w.id==='boerboel')rebuildDogs();
+      markSeen('e',w.id);
       banner('EVOLUSIE: '+E.name.toUpperCase()+'!');
       SND.lvl();boomParts(G.x,G.y,40,'#e0b64f');
       break;
@@ -823,6 +827,7 @@ function fireWeapon(w,dt){
   const T=WEAPONS[w.id].t[w.lvl-1];
   // ===== SUPER-WAPENS =====
   if(w.id==='diewet'){ // Donderhamer + Ou Ses
+    w.cd-=dt;if(w.cd>0)return;
     const P=G.projs, range=T.range*G.areaMul;
     near(G.x,G.y,range+30,NB);
     for(const z of NB){if(z.dead)continue;const d2=dist2(G.x,G.y,z.x,z.y);
@@ -850,6 +855,7 @@ function fireWeapon(w,dt){
     // val deur na die honde-logika hieronder
   }
   if(w.id==='spitbraai'){ // Vleisvurk + Helvuur
+    w.cd-=dt;if(w.cd>0)return;
     const dir=aimDir(),base=Math.atan2(dir[1],dir[0]);
     for(let i=0;i<T.count;i++){
       const a=base+(i-(T.count-1)/2)*.22;
@@ -857,6 +863,19 @@ function fireWeapon(w,dt){
     }
     SND.shoot();SND.slash();
     w.cd=T.cd*G.cdMul;return;
+  }
+  if(w.id==='r4'){ // Pa se aanvalsgeweer: drie-skoot sarsie
+    w.cd-=dt;if(w.cd>0)return;
+    const z=nearestZ(G.x,G.y,760);
+    if(z){
+      const base=Math.atan2(z.y-G.y,z.x-G.x);
+      for(let i=0;i<3;i++){
+        const a=base+rand(-.05,.05);
+        G.projs.push({k:'pellet',x:G.x+Math.cos(base)*i*7,y:G.y+Math.sin(base)*i*7,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:5,dmg:T.dmg*G.dmgMul*G.gunMul,pierce:2,life:1.4,big:true,hit:new Set()});
+      }
+      SND.bang();w.cd=T.cd*G.cdMul;
+    }else w.cd=.1;
+    return;
   }
   if(w.id==='boerboel'||w.id==='diekudde'){ // aanhoudend
     const sup=w.id==='diekudde';
@@ -1761,8 +1780,17 @@ function buildChoices(){
     return wa&&wb;
   });
   if(combo)out[0]={kind:'combo',combo};
+  // R4: Pa met AL VIER gewere op vlak 5
+  if(G.char.id==='pa'&&!G.weapons.some(w=>w.id==='r4')&&
+     ['windbuks','rewolwer','haelgeweer','uzi'].every(id=>G.weapons.find(w=>w.id===id&&w.lvl>=WEAPON_MAX)))
+    out[0]={kind:'r4'};
   if(G.genadeReady)out[0]={kind:'genade'}; // baas se Genade-kaart wen die gleuf
   return out;
+}
+function markSeen(cat,id){
+  SAVE.seen=SAVE.seen||{w:{},e:{},c:{},p:{}};
+  if(!SAVE.seen[cat])SAVE.seen[cat]={};
+  if(!SAVE.seen[cat][id]){SAVE.seen[cat][id]=true;persist();}
 }
 let choices=[];
 function openLevelUp(){
@@ -1784,6 +1812,7 @@ function openLevelUp(){
       nm=P.name;ds=P.desc;
       pips='<div class="pips">'+Array.from({length:PASSIVE_MAX},(_,k)=>'<span class="pip'+(k<c.lvl?' on':'')+'"></span>').join('')+'</div>';
     }else if(c.kind==='combo'){tag='<span class="tag" style="color:#f7d060">SAAMSMELT!</span>';nm=c.combo.name;ds=c.combo.desc;}
+    else if(c.kind==='r4'){tag='<span class="tag" style="color:#ffe0a0">PA SE TROTS</span>';nm='R4';ds='Al vier gewere smelt saam in die aanvalsgeweer.';}
     else if(c.kind==='genade'){tag='<span class="tag" style="color:var(--red)">GENADE</span>';nm='Genade';ds='Maak elke gewone zombie op die skerm dood.';}
     else if(c.kind==='heal'){tag='<span class="tag">PADKOS</span>';nm='Padkos';ds='Genees 40 LP.';}
     else{tag='<span class="tag">MUNTE</span>';nm='Blikkie Munte';ds='+30 munte.';}
@@ -1811,13 +1840,21 @@ function pickChoice(i){
     else addWeapon(c.id);
   }else if(c.kind==='p'){
     G.passives[c.id]=(G.passives[c.id]||0)+1;recalc();
+    markSeen('p',c.id);
   }else if(c.kind==='combo'){
     const cb=c.combo;
     G.weapons=G.weapons.filter(w=>w.id!==cb.a&&w.id!==cb.b);
     addWeapon(cb.id);
     rebuildDogs();
+    markSeen('c',cb.id);
     banner('SAAMSMELT: '+cb.name.toUpperCase()+'!');
     SND.lvl();boomParts(G.x,G.y,40,'#f7d060');
+  }else if(c.kind==='r4'){
+    G.weapons=G.weapons.filter(w=>!['windbuks','rewolwer','haelgeweer','uzi'].includes(w.id));
+    addWeapon('r4');
+    markSeen('c','r4');
+    banner('DIE R4! STAAN TERUG, SEUNS.');
+    SND.lvl();SND.bang();boomParts(G.x,G.y,40,'#ffe0a0');
   }else if(c.kind==='genade'){
     G.genadeReady=false;let n=0;
     for(const z of G.zombies){
@@ -2854,17 +2891,25 @@ document.getElementById('bBoard').onclick=()=>{renderBoard();show('board')};
 const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
 function renderGids(){
   const b=document.getElementById('gidsBody');
-  let h='<p class="hint" style="text-align:center;margin-bottom:12px">Maak ’n wapen vlak 5 + kry sy maat-passief, dood dan die baas → EVOLUSIE.</p>';
+  const seen=Object.assign({w:{},e:{},c:{},p:{}},SAVE.seen||{});
+  let h='<p class="hint" style="text-align:center;margin-bottom:12px">Maak ’n wapen vlak 5 + kry sy maat-passief, dood dan die baas → EVOLUSIE.<br><span style="color:#5b614a">Grys ??? = nog nie ontdek nie — speel daarmee om te ontsluit.</span></p>';
   h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:10px 0 6px">WAPENS → EVOLUSIES</div>';
   h+='<div style="display:grid;grid-template-columns:1fr;gap:5px">';
   for(const id in WEAPONS){
+    if(WEAPONS[id].super)continue; // supers wys in hul eie afdeling
     const W=WEAPONS[id],E=EVOS[id];
     h+='<div style="display:flex;gap:8px;align-items:baseline;border-bottom:1px solid #2c3a1e;padding:3px 0;flex-wrap:wrap">';
+    if(!seen.w[id]){
+      h+='<span style="color:#5b614a;min-width:120px;font-size:19px">???</span><span style="color:#4a5038;font-size:16px;flex:1">— nog nie ontdek nie —</span></div>';
+      continue;
+    }
     h+='<span style="color:var(--ink);min-width:120px;font-size:19px">'+esc(W.name)+'</span>';
-    if(E){
+    if(E&&seen.e[id]){
       const pn=PASSIVES[E.pass]?PASSIVES[E.pass].name:E.pass;
       h+='<span style="color:var(--dim);font-size:16px;flex:1">+ '+esc(pn)+' → <span style="color:#f7d060">'+esc(E.name)+'</span> <span style="color:#6d7358">'+esc(E.desc)+'</span></span>';
-    }else h+='<span style="color:#6d7358;font-size:16px;flex:1">— nog geen evolusie —</span>';
+    }else if(E){
+      h+='<span style="color:#5b614a;font-size:16px;flex:1">+ ??? → ??? <span style="font-size:14px">(vlak 5 + regte passief + baas)</span></span>';
+    }else h+='<span style="color:#6d7358;font-size:16px;flex:1">— geen evolusie —</span>';
     h+='</div>';
   }
   h+='</div>';
@@ -2873,14 +2918,29 @@ function renderGids(){
   for(const cb of COMBOS){
     const en=id=>EVOS[id]?EVOS[id].name:(WEAPONS[id]?WEAPONS[id].name:id);
     h+='<div style="border-bottom:1px solid #2c3a1e;padding:3px 0;font-size:17px">';
-    h+='<span style="color:var(--dim)">'+esc(en(cb.a))+' + '+esc(en(cb.b))+' → </span>';
-    h+='<span style="color:#ffe0a0">'+esc(cb.name)+'</span> <span style="color:#6d7358;font-size:15px">'+esc(cb.desc)+'</span></div>';
+    if(seen.c[cb.id]){
+      h+='<span style="color:var(--dim)">'+esc(en(cb.a))+' + '+esc(en(cb.b))+' → </span>';
+      h+='<span style="color:#ffe0a0">'+esc(cb.name)+'</span> <span style="color:#6d7358;font-size:15px">'+esc(cb.desc)+'</span>';
+    }else if(seen.e[cb.a]&&seen.e[cb.b]){
+      h+='<span style="color:var(--dim)">'+esc(en(cb.a))+' + '+esc(en(cb.b))+' → </span><span style="color:#5b614a">??? (dra albei saam!)</span>';
+    }else{
+      h+='<span style="color:#5b614a">??? + ??? → ???</span>';
+    }
+    h+='</div>';
   }
-  h+='</div>';
+  // R4
+  h+='<div style="border-bottom:1px solid #2c3a1e;padding:3px 0;font-size:17px">';
+  if(seen.c.r4)h+='<span style="color:var(--dim)">Pa + al vier gewere vlak 5 → </span><span style="color:#ffe0a0">R4</span> <span style="color:#6d7358;font-size:15px">'+esc(WEAPONS.r4.desc)+'</span>';
+  else h+='<span style="color:#5b614a">Pa se geheim: ??? (iets met al die gewere...)</span>';
+  h+='</div></div>';
   h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:16px 0 6px">PASSIEWE</div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
   for(const id in PASSIVES){
     const P=PASSIVES[id];
+    if(!seen.p[id]){
+      h+='<div style="font-size:16px;color:#5b614a;border-bottom:1px solid #2c3a1e;padding:2px 0">???</div>';
+      continue;
+    }
     const who=P.only?' <span style="color:#6db3d6">('+(CHAR_NAME[P.only]||P.only)+')</span>':'';
     h+='<div style="font-size:16px;color:var(--dim);border-bottom:1px solid #2c3a1e;padding:2px 0"><b style="color:var(--ink);font-weight:400">'+esc(P.name)+'</b>'+who+' — '+esc(P.desc)+'</div>';
   }
