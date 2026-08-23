@@ -79,6 +79,7 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   <button class="btn" id="bPlay">Speel</button>
   <button class="btn ghost" id="bSkills">Vaardighede</button>
   <button class="btn ghost" id="bBoard">Telbord</button>
+  <button class="btn ghost" id="bGids">Handleiding</button>
   <div><button class="btn ghost" id="bToggleSkills" style="font-size:17px;margin-top:6px">Vaardighede: AAN</button></div>
   <p class="hint">Beweeg: WASD / pyltjies — of sleep op selfoon. Wapens skiet vanself.<br>Tel groen juwele op om op te vlak. Geen pouse. Geen genade. <b>M</b>: klank.</p>
   <p class="credits">vir Louw, Altus &amp; Danie · Groenfontein</p>
@@ -111,6 +112,12 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   </div>
   <button class="btn" id="bNameGo">Speel</button>
   <p class="hint">Jou naam gaan saam met jou telling op die telbord.</p>
+</div></div>
+
+<div class="screen" id="scrGids"><div class="panel" style="max-width:860px;text-align:left">
+  <div class="sub" style="color:var(--gold);text-align:center">HANDLEIDING</div>
+  <div id="gidsBody" style="margin-top:14px"></div>
+  <div style="text-align:center"><button class="btn ghost" id="bBack4" style="margin-top:16px">Terug</button></div>
 </div></div>
 
 <div class="screen" id="scrBoard"><div class="panel">
@@ -318,20 +325,27 @@ const EVOS={
  doringdraad:{pass:'kakie',name:'Lemmetjiesdraad',desc:'Groter ring wat als daarin vertraag.'},
  boerboel:{pass:'biltong',name:'Die Trop',desc:'Drie honde wat juwele gaan haal.'},
  wysheidstaf:{pass:'wysheid',name:'Deurbraak',desc:'Die golf keer zombies om — hulle veg vir jou.'},
+ haelgeweer:{pass:'kruithoring',name:'Dubbelloop',desc:'Twee wolke haels tegelyk, baie wyer.'},
+ uzi:{pass:'boeretroos',name:'Trommel',desc:'Dubbel spoed en boor deur.'},
+ boog:{pass:'slypsteen',name:'Skerpskutter',desc:'Elke pyl kritiek en boor deur almal.'},
+ waterpyp:{pass:'kakie',name:'Breekyster',desc:'Altyd verdwaas, wyer en harder.'},
+ lem:{pass:'kruithoring',name:'Sirkelsaag',desc:'Meer, groter lemme wat vinniger sny.'},
+ katapult:{pass:'kruithoring',name:'Rotsval',desc:'’n Reën van klippe wat oopbars.'},
+ vlambraai:{pass:'boerewors',name:'Helvuur',desc:'Vlamme laat brandende grond agter.'},
 };
 const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=6, MAX_P=4;
 const SKILLS=[
- {id:'spiere',name:'Spiere',desc:'+4% skade per rang',max:5,cost:r=>25*Math.pow(2,r)},
- {id:'taai',name:'Taai Vel',desc:'+10 LP per rang',max:5,cost:r=>20*Math.pow(2,r)},
- {id:'vinnig',name:'Vinnige Voete',desc:'+3% spoed per rang',max:5,cost:r=>25*Math.pow(2,r)},
- {id:'slim',name:'Slim Boer',desc:'+8% XP per rang',max:5,cost:r=>30*Math.pow(2,r)},
- {id:'suinig',name:'Suinige Sak',desc:'+15% munte per rang',max:5,cost:r=>20*Math.pow(2,r)},
- {id:'pantser',name:'Dik Vel',desc:'+1 pantser per rang',max:3,cost:r=>40*Math.pow(2,r)},
- {id:'flink',name:'Flink Hande',desc:'-4% herlaaityd per rang',max:5,cost:r=>30*Math.pow(2,r)},
- {id:'tweedekans',name:'Tweede Kans',desc:'Herleef een keer per lopie met halwe LP',max:1,cost:()=>400},
- {id:'kalm',name:'Bly Maar Kalm',desc:'+0.5% LP-genees per sekonde per rang',max:4,cost:r=>40*Math.pow(2,r)},
- {id:'voorsprong',name:'Voorsprong',desc:'+1 gratis kaart-keuse aan die begin van elke lopie',max:2,cost:r=>60*Math.pow(2,r)},
- {id:'herrol',name:'Herrol',desc:'+1 herrol van vlak-op kaarte per lopie',max:3,cost:r=>50*Math.pow(2,r)},
+ {id:'spiere',name:'Spiere',desc:'+4% skade per rang',max:5,cost:r=>40*Math.pow(3,r)},
+ {id:'taai',name:'Taai Vel',desc:'+10 LP per rang',max:5,cost:r=>35*Math.pow(3,r)},
+ {id:'vinnig',name:'Vinnige Voete',desc:'+3% spoed per rang',max:5,cost:r=>40*Math.pow(3,r)},
+ {id:'slim',name:'Slim Boer',desc:'+8% XP per rang',max:5,cost:r=>45*Math.pow(3,r)},
+ {id:'suinig',name:'Suinige Sak',desc:'+15% munte per rang',max:5,cost:r=>35*Math.pow(3,r)},
+ {id:'pantser',name:'Dik Vel',desc:'+1 pantser per rang',max:3,cost:r=>70*Math.pow(3,r)},
+ {id:'flink',name:'Flink Hande',desc:'-4% herlaaityd per rang',max:5,cost:r=>45*Math.pow(3,r)},
+ {id:'kalm',name:'Bly Maar Kalm',desc:'+0.5% LP-genees per sekonde per rang',max:4,cost:r=>60*Math.pow(3,r)},
+ {id:'voorsprong',name:'Voorsprong',desc:'+1 gratis kaart-keuse aan die begin van elke lopie',max:2,cost:r=>120*Math.pow(3,r)},
+ {id:'herrol',name:'Herrol',desc:'+1 herrol van vlak-op kaarte per lopie',max:3,cost:r=>90*Math.pow(3,r)},
+ {id:'tweedekans',name:'Tweede Kans',desc:'Herleef een keer per lopie met halwe LP',max:1,cost:()=>1200},
 ];
 const DEATH_LINES=['Die veld is stil vanaand.','Groenfontein onthou.','Die windpomp draai alleen verder.','Nog ’n kruis langs die grondpad.','Die boerboel huil by die hek.','Die braai brand uit.'];
 
@@ -496,7 +510,7 @@ function newGame(char){
     zombies:[], projs:[], gems:[], drops:[], parts:[], dnums:[], slashes:[],
     spawnT:1, waveT:90, bossT:300, bossStage:0, bossN:0, banner:null, shake:0,
     enrageOn:false, janOn:false, paralyzeT:0,
-    bales:[], drums:[], pools:[], eprojs:[], poolTick:0,
+    bales:[], drums:[], pools:[], eprojs:[], fires:[], poolTick:0,
     event:null, eventT:80, braaiCd:0, pompCharge:0, pompCd:0, pompFlash:0, power:true,
     regen:0, speed:175, dmgMul:1, cdMul:1, armor:0, xpMul:1, munteMul:1, magnetR:80,
     revived:false, splats:[], dawnShown:false, nightShown:false,
@@ -714,6 +728,7 @@ function killZombie(z){
     banner(z.variant==='alicia'?'ALICIA IS WEG. TOTSIENS.':z.variant==='jan'?'JAN SE GEHEIM IS VEILIG.':'SKAAP RAM IS NEER!');
     SND.boom();
     tryEvolve();
+    G.genadeReady=true;G.pend++; // baas laat val 'n Genade-kaart
   }else{
     G.gems.push({x:z.x+rand(-6,6),y:z.y+rand(-6,6),v:z.xp*(z.elite?3:1)});
     if(z.elite)G.drops.push({x:z.x,y:z.y,k:'munte',v:5});
@@ -732,6 +747,7 @@ function killZombie(z){
         banner('DIE KLOMP IS UIT!');SND.boom();
         G.drops.push({x:z.x+15,y:z.y,k:'munte',v:40});
         tryEvolve();
+        G.genadeReady=true;G.pend++;
       }
     }
   }
@@ -854,22 +870,32 @@ function fireWeapon(w,dt){
       return;
     }
     const jit=w.id==='uzi'?.1:bow?.02:.04;
+    const boogEvo=bow&&w.evo, uziEvo=w.id==='uzi'&&w.evo;
     skipSet.clear();let fired=false;
     for(let i=0;i<T.count;i++){
       const z=nearestZ(G.x,G.y,bow?880:720,skipSet);
       if(!z)break;skipSet.add(z);fired=true;
       const a=Math.atan2(z.y-G.y,z.x-G.x)+rand(-jit,jit);
-      P.push({k:'pellet',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:big?5:4,dmg:T.dmg*G.dmgMul*mul,pierce:T.pierce,life:bow?1.6:1.4,big,arrow:bow,ric:(w.id==='windbuks'&&w.evo)?2:0,hit:new Set()});
+      const pierce=boogEvo?999:uziEvo?1:T.pierce; // Skerpskutter boor almal; Trommel boor 1
+      const pj={k:'pellet',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:big?5:4,dmg:T.dmg*G.dmgMul*mul,pierce,life:bow?1.6:1.4,big,arrow:bow,ric:(w.id==='windbuks'&&w.evo)?2:0,hit:new Set()};
+      if(boogEvo)pj.alwaysCrit=true; // Skerpskutter: elke pyl kritiek
+      P.push(pj);
     }
-    if(fired){big?SND.bang():SND.shoot();w.cd=T.cd*G.cdMul;}else w.cd=.12;
+    let cd=T.cd*G.cdMul;
+    if(uziEvo)cd*=.5; // Trommel: dubbel spoed
+    if(fired){big?SND.bang():SND.shoot();w.cd=cd;}else w.cd=.12;
   }
   else if(w.id==='haelgeweer'){
-    const z=nearestZ(G.x,G.y,420);
+    const z=nearestZ(G.x,G.y,w.evo?480:420);
     if(z){
       const base=Math.atan2(z.y-G.y,z.x-G.x);
-      for(let i=0;i<T.count;i++){
-        const a=base+rand(-.32,.32);
-        P.push({k:'pellet',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:3,dmg:T.dmg*G.dmgMul*G.gunMul,pierce:0,life:.42,hit:new Set()});
+      const cones=w.evo?2:1, spread=w.evo?.5:.32, cnt=T.count;
+      for(let cone=0;cone<cones;cone++){
+        const ca=base+(cones>1?(cone-.5)*.5:0);
+        for(let i=0;i<cnt;i++){
+          const a=ca+rand(-spread,spread);
+          P.push({k:'pellet',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:3,dmg:T.dmg*G.dmgMul*G.gunMul,pierce:w.evo?1:0,life:w.evo?.5:.42,hit:new Set()});
+        }
       }
       SND.bang();w.cd=T.cd*G.cdMul;
     }else w.cd=.15;
@@ -909,19 +935,20 @@ function fireWeapon(w,dt){
   }
   else if(w.id==='waterpyp'){
     const dir=aimDir(),a=Math.atan2(dir[1],dir[0]);
-    G.slashes.push({x:G.x,y:G.y,ang:a,t:.15,range:T.range,arc:T.arc});
-    near(G.x,G.y,T.range+30,NB);
+    const range=T.range*(w.evo?1.2:1), arc=T.arc*(w.evo?1.5:1);
+    G.slashes.push({x:G.x,y:G.y,ang:a,t:.15,range:range,arc:arc});
+    near(G.x,G.y,range+30,NB);
     let hit=false;
     for(const z of NB){
       if(z.dead)continue;
       const d=Math.sqrt(dist2(G.x,G.y,z.x,z.y));
-      if(d>T.range+z.r)continue;
+      if(d>range+z.r)continue;
       let za=Math.atan2(z.y-G.y,z.x-G.x)-a;
       while(za>Math.PI)za-=TAU;while(za<-Math.PI)za+=TAU;
-      if(Math.abs(za)<T.arc/2){
+      if(Math.abs(za)<arc/2){
         hit=true;
-        wHit(z,T.dmg*G.dmgMul,(z.x-G.x)/Math.max(1,d)*T.kb,(z.y-G.y)/Math.max(1,d)*T.kb,false);
-        if(T.stun&&!z.dead&&z.type!=='boss'&&R()<T.stun)z.stun=1;
+        wHit(z,T.dmg*G.dmgMul*(w.evo?1.3:1),(z.x-G.x)/Math.max(1,d)*T.kb,(z.y-G.y)/Math.max(1,d)*T.kb,false);
+        if(!z.dead&&z.type!=='boss'&&(w.evo||(T.stun&&R()<T.stun)))z.stun=w.evo?1.5:1; // Breekyster: altyd verdwaas
       }
     }
     if(hit)SND.slam();else SND.slash();
@@ -1009,28 +1036,31 @@ function fireWeapon(w,dt){
   }
   else if(w.id==='katapult'){
     let fired=false;skipSet.clear();
-    for(let i=0;i<T.count;i++){
-      const z=nearestZ(G.x+rand(-200,200),G.y+rand(-200,200),650,skipSet);
-      if(!z)break;skipSet.add(z);fired=true;
+    const shots=w.evo?T.count+3:T.count; // Rotsval: reën van klippe
+    for(let i=0;i<shots;i++){
+      const z=nearestZ(G.x+rand(-260,260),G.y+rand(-260,260),650,skipSet);
+      if(!z){if(!w.evo)break;else continue;}skipSet.add(z);fired=true;
       const tx=z.x+rand(-25,25),ty=z.y+rand(-25,25);
       const d=Math.hypot(tx-G.x,ty-G.y)||1;
-      P.push({k:'klip',x:G.x,y:G.y,sx:G.x,sy:G.y,tx,ty,tot:d,prog:0,r:7,dmg:T.dmg*G.dmgMul,aoe:T.r*G.areaMul,life:5});
+      P.push({k:'klip',x:G.x,y:G.y,sx:G.x,sy:G.y,tx,ty,tot:d,prog:0,r:7,dmg:T.dmg*G.dmgMul,aoe:T.r*G.areaMul*(w.evo?1.2:1),life:5});
     }
     if(fired){SND.shoot();w.cd=T.cd*G.cdMul;}else w.cd=.15;
   }
   else if(w.id==='vlambraai'){
     const dir=aimDir(),base=Math.atan2(dir[1],dir[0]);
-    for(let i=0;i<T.count;i++){
+    const cnt=w.evo?T.count+6:T.count;
+    for(let i=0;i<cnt;i++){
       const a=base+rand(-T.spread*G.areaMul,T.spread*G.areaMul),sp=rand(240,380);
-      P.push({k:'vlam',x:G.x+rand(-4,4),y:G.y+rand(-4,4),vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,r:9,dmg:T.dmg*G.dmgMul,pierce:999,life:rand(.35,.5),hit:new Set()});
+      P.push({k:'vlam',x:G.x+rand(-4,4),y:G.y+rand(-4,4),vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,r:9,dmg:T.dmg*G.dmgMul*(w.evo?1.2:1),pierce:999,life:rand(.35,.5),fire:!!w.evo,hit:new Set()});
     }
     SND.slash();w.cd=T.cd*G.cdMul;
   }
   else if(w.id==='lem'){
     const dir=aimDir(),base=Math.atan2(dir[1],dir[0]);
-    for(let i=0;i<T.count;i++){
-      const a=base+(i-(T.count-1)/2)*.5;
-      P.push({k:'lem',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:12,dmg:T.dmg*G.dmgMul,ph:0,life:6,rot:0,hit:new Set()});
+    const cnt=w.evo?T.count+2:T.count;
+    for(let i=0;i<cnt;i++){
+      const a=base+(i-(cnt-1)/2)*.5;
+      P.push({k:'lem',x:G.x,y:G.y,vx:Math.cos(a)*T.spd*(w.evo?1.15:1),vy:Math.sin(a)*T.spd*(w.evo?1.15:1),r:w.evo?16:12,dmg:T.dmg*G.dmgMul*(w.evo?1.3:1),ph:0,life:6,rot:0,hit:new Set()});
     }
     SND.shoot();w.cd=T.cd*G.cdMul;
   }
@@ -1482,6 +1512,15 @@ function update(dt){
     if(p.t<=0){p.dead=true;if(G.pools.length<60)G.pools.push({x:p.x,y:p.y,r:34,t:5});}
   }
   for(const q of G.pools){q.t-=dt;if(q.t<=0)q.dead=true;}
+  // Helvuur: brandende grond wat zombies skroei
+  for(const f of G.fires){
+    f.t-=dt;if(f.t<=0){f.dead=true;continue;}
+    f.tick-=dt;
+    if(f.tick<=0){
+      f.tick=.3;near(f.x,f.y,f.r+20,NB);
+      for(const z of NB)if(!z.dead&&z.ally<=0&&dist2(f.x,f.y,z.x,z.y)<(f.r+z.r)*(f.r+z.r))hurtZombie(z,f.dmg,0,0);
+    }
+  }
   if(G.poolTick>0)G.poolTick-=dt;
   if(G.poolTick<=0&&G.dying==null){
     for(const q of G.pools){
@@ -1526,13 +1565,17 @@ function update(dt){
     if(p.k==='vurk')p.rot+=dt*2;
     p.x+=p.vx*dt;p.y+=p.vy*dt;
     p.life-=dt;
-    if(p.life<=0||p.x<-40||p.x>WORLD_W+40||p.y<-40||p.y>WORLD_H+40){p.dead=true;continue;}
+    if(p.life<=0||p.x<-40||p.x>WORLD_W+40||p.y<-40||p.y>WORLD_H+40){
+      if(p.fire&&G.fires.length<40&&p.life<=0)G.fires.push({x:p.x,y:p.y,r:26,t:2,dmg:p.dmg*.6,tick:0});
+      p.dead=true;continue;
+    }
     near(p.x,p.y,p.r+34,NB);
     for(const z of NB){
       if(z.dead||z.ally>0||p.hit.has(z))continue;
       if(dist2(p.x,p.y,z.x,z.y)<(p.r+z.r)*(p.r+z.r)){
         p.hit.add(z);
-        if(p.k==='vurk'||p.k==='lem')bladeHit(z,p.dmg,p.vx*dt*2,p.vy*dt*2);
+        if(p.alwaysCrit)hurtZombie(z,p.dmg*2,p.vx*dt*2,p.vy*dt*2,true); // Skerpskutter
+        else if(p.k==='vurk'||p.k==='lem')bladeHit(z,p.dmg,p.vx*dt*2,p.vy*dt*2);
         else wHit(z,p.dmg,p.vx*dt*2,p.vy*dt*2,false); // gewere/boog/vlam: geluk-kritiek
         if(p.vleis&&z.dead&&G.drops.length<90)G.drops.push({x:z.x,y:z.y,k:'vleis',v:2});
         if(p.k==='pellet'){
@@ -1594,6 +1637,7 @@ function update(dt){
   G.slashes=G.slashes.filter(s=>!s.dead);
   G.eprojs=G.eprojs.filter(p=>!p.dead);
   G.pools=G.pools.filter(q=>!q.dead);
+  G.fires=G.fires.filter(f=>!f.dead);
   G.drums=G.drums.filter(d=>!d.dead);
   G.bales=G.bales.filter(b=>b.hp>0);
   // vlak-op skerm
@@ -1655,6 +1699,7 @@ function buildChoices(){
   }
   while(out.length<3)out.push(out.length===1?{kind:'heal'}:{kind:'munt'});
   if(!out.length)out.push({kind:'heal'},{kind:'munt'},{kind:'heal'});
+  if(G.genadeReady)out[0]={kind:'genade'}; // baas se Genade-kaart
   return out;
 }
 let choices=[];
@@ -1676,7 +1721,8 @@ function openLevelUp(){
       tag=c.nu?'<span class="tag">NUUT!</span>':'<span class="tag up">VLAK '+c.lvl+'</span>';
       nm=P.name;ds=P.desc;
       pips='<div class="pips">'+Array.from({length:PASSIVE_MAX},(_,k)=>'<span class="pip'+(k<c.lvl?' on':'')+'"></span>').join('')+'</div>';
-    }else if(c.kind==='heal'){tag='<span class="tag">PADKOS</span>';nm='Padkos';ds='Genees 40 LP.';}
+    }else if(c.kind==='genade'){tag='<span class="tag" style="color:var(--red)">GENADE</span>';nm='Genade';ds='Maak elke gewone zombie op die skerm dood.';}
+    else if(c.kind==='heal'){tag='<span class="tag">PADKOS</span>';nm='Padkos';ds='Genees 40 LP.';}
     else{tag='<span class="tag">MUNTE</span>';nm='Blikkie Munte';ds='+30 munte.';}
     el.innerHTML=tag+'<h3>'+nm+'</h3>'+pips+'<p>'+ds+'</p><span class="key">'+(i+1)+'</span>';
     el.onclick=()=>pickChoice(i);
@@ -1702,6 +1748,16 @@ function pickChoice(i){
     else addWeapon(c.id);
   }else if(c.kind==='p'){
     G.passives[c.id]=(G.passives[c.id]||0)+1;recalc();
+  }else if(c.kind==='genade'){
+    G.genadeReady=false;let n=0;
+    for(const z of G.zombies){
+      if(z.dead||z.type==='boss'||z.type==='hoed'||z.elite||z.variant)continue;
+      z.dead=true;n++;G.kills++;
+      G.gems.push({x:z.x,y:z.y,v:z.xp||1});
+      if(G.splats.length<140)G.splats.push({x:z.x,y:z.y,r:z.r*1.1,rot:R()*TAU});
+    }
+    if(G.gems.length>360)G.gems=G.gems.slice(-360);
+    G.shake=8;SND.boom();banner('GENADE! '+n+' NEER');
   }else if(c.kind==='heal')G.hp=Math.min(G.maxhp,G.hp+40);
   else G.munte+=30*G.munteMul;
   G.pend--;
@@ -2100,6 +2156,17 @@ function render(){
     ctx.beginPath();ctx.ellipse(q.x+q.r*.25,q.y-q.r*.15,q.r*.4,q.r*.25,0,0,TAU);ctx.fill();
     ctx.globalAlpha=1;
   }
+  // Helvuur brandende grond
+  for(const f of G.fires){
+    if(f.x<camX-40||f.x>camX+VW+40||f.y<camY-40||f.y>camY+VH+40)continue;
+    const fl=(performance.now()/70|0)%2===0;
+    ctx.globalAlpha=Math.min(.6,f.t*.4);
+    ctx.fillStyle=fl?'#e07830':'#f2c14a';
+    ctx.beginPath();ctx.ellipse(f.x,f.y,f.r,f.r*.7,0,0,TAU);ctx.fill();
+    ctx.fillStyle=fl?'#f2c14a':'#ffe0a0';
+    ctx.beginPath();ctx.ellipse(f.x,f.y-f.r*.2,f.r*.5,f.r*.35,0,0,TAU);ctx.fill();
+    ctx.globalAlpha=1;
+  }
   // hooibale
   for(const b of G.bales){
     if(b.x<camX-30||b.x>camX+VW+30||b.y<camY-30||b.y>camY+VH+30)continue;
@@ -2341,6 +2408,7 @@ function render(){
       else if(p.k==='pellet')lights.push({x:p.x,y:p.y,r:34});
     }
     for(const p of G.eprojs)lights.push({x:p.x,y:p.y,r:28});
+    for(const f of G.fires)lights.push({x:f.x,y:f.y,r:60});
     if(G.decoy)lights.push({x:G.decoy.x,y:G.decoy.y,r:150});
     for(const p of G.parts)if(p.tp==='ring')lights.push({x:p.x,y:p.y,r:p.r1*(p.t/p.life)+80});
     for(const g of G.gems){
@@ -2482,7 +2550,7 @@ function drawHUD(){
 }
 
 /* ============================== UI / SCREENS ============================== */
-const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard',name:'scrName',pause:'scrPause'};
+const SCREENS={menu:'scrMenu',chars:'scrChars',skills:'scrSkills',lvl:'scrLvl',dead:'scrDead',board:'scrBoard',name:'scrName',pause:'scrPause',gids:'scrGids'};
 let screenAt=0;
 function show(name){
   scr=name;screenAt=performance.now();
@@ -2706,6 +2774,37 @@ document.getElementById('bBack2').onclick=()=>{refreshMenu();show('menu')};
 document.getElementById('bAgain').onclick=()=>{if(lastChar)startRun(lastChar)};
 document.getElementById('bHome').onclick=()=>{G=null;snapClear();refreshMenu();show('menu')};
 document.getElementById('bBoard').onclick=()=>{renderBoard();show('board')};
+const esc=s=>String(s).replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+function renderGids(){
+  const b=document.getElementById('gidsBody');
+  let h='<p class="hint" style="text-align:center;margin-bottom:12px">Maak ’n wapen vlak 5 + kry sy maat-passief, dood dan die baas → EVOLUSIE.</p>';
+  h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:10px 0 6px">WAPENS → EVOLUSIES</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr;gap:5px">';
+  for(const id in WEAPONS){
+    const W=WEAPONS[id],E=EVOS[id];
+    h+='<div style="display:flex;gap:8px;align-items:baseline;border-bottom:1px solid #2c3a1e;padding:3px 0;flex-wrap:wrap">';
+    h+='<span style="color:var(--ink);min-width:120px;font-size:19px">'+esc(W.name)+'</span>';
+    if(E){
+      const pn=PASSIVES[E.pass]?PASSIVES[E.pass].name:E.pass;
+      h+='<span style="color:var(--dim);font-size:16px;flex:1">+ '+esc(pn)+' → <span style="color:#f7d060">'+esc(E.name)+'</span> <span style="color:#6d7358">'+esc(E.desc)+'</span></span>';
+    }else h+='<span style="color:#6d7358;font-size:16px;flex:1">— nog geen evolusie —</span>';
+    h+='</div>';
+  }
+  h+='</div>';
+  h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:16px 0 6px">PASSIEWE</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">';
+  for(const id in PASSIVES){
+    const P=PASSIVES[id];
+    const who=P.only?' <span style="color:#6db3d6">('+(CHAR_NAME[P.only]||P.only)+')</span>':'';
+    h+='<div style="font-size:16px;color:var(--dim);border-bottom:1px solid #2c3a1e;padding:2px 0"><b style="color:var(--ink);font-weight:400">'+esc(P.name)+'</b>'+who+' — '+esc(P.desc)+'</div>';
+  }
+  h+='</div>';
+  h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:16px 0 6px">BOSSE</div>';
+  h+='<p style="font-size:17px;color:var(--dim);line-height:1.4">5min <b style="color:var(--ink);font-weight:400">Skaap Ram</b> · 10min <b style="color:var(--ink);font-weight:400">Die Klomp</b> · 20min <b style="color:var(--ink);font-weight:400">Alicia</b> · 30min <b style="color:var(--ink);font-weight:400">Jan</b>. Elke baas laat val ’n <span style="color:var(--red)">Genade</span>-kaart (maak alle gewone zombies dood).</p>';
+  b.innerHTML=h;
+}
+document.getElementById('bGids').onclick=()=>{renderGids();show('gids')};
+document.getElementById('bBack4').onclick=()=>{refreshMenu();show('menu')};
 document.getElementById('bBack3').onclick=()=>{refreshMenu();show('menu')};
 document.getElementById('bToggleSkills').onclick=()=>{
   SAVE.skillsOff=!SAVE.skillsOff;persist();refreshMenu();SND.pick();
