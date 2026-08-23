@@ -494,6 +494,45 @@ const SKILLS=[
 ];
 const DEATH_LINES=['Die veld is stil vanaand.','Groenfontein onthou.','Die windpomp draai alleen verder.','Nog ’n kruis langs die grondpad.','Die boerboel huil by die hek.','Die braai brand uit.'];
 
+/* ============================== WAPEN-IKONE ==============================
+   16x16 pixelkuns, met die hand geteken as karakterkaarte. Elke letter is 'n
+   palet-kleur, '.' is deursigtig. Gebak na klein canvases met load. */
+const ICON_PAL={k:'#14160e',n:'#55606f',w:'#ece5cc',s:'#8a6f3f',S:'#c2a25f',g:'#e0b64f',
+  y:'#ffe0a0',r:'#c05038',o:'#e07830',p:'#a78bda',b:'#7ec8ff',m:'#9aa07f',e:'#5b614a'};
+const ICON_ART={
+ windbuks:['................','.............kk.','............knnk','...........knnk.','..........knnk..','.........knnk...','........knnk....','.......knnk.....','......kSSk......','.....kSSk.......','....kSSsk.......','...kSssk........','..kSssk.........','..kssk..........','..kkk...........','................'],
+ rewolwer:['................','................','................','..kkkkkkkkkkkk..','.knwwnnnnnnnnnk.','.knnnnnnnnnnnnk.','..kkkknnnkkkkk..','.....knnnk......','.....knnnk......','....ksnnk.......','....kssk........','...kssk.........','...kssk.........','...kkk..........','................','................'],
+ haelgeweer:['................','...........kkk..','..........knnnk.','.........knnnk..','........knnnk...','.......knnnk....','......knnnk.....','.....knnnk......','....kSSSk.......','...kSSSsk.......','...kSSssk.......','..kSSssk........','..kSssk.........','.kssk...........','.kkk............','................'],
+ uzi:['................','................','................','..kkkkkkkkkkk...','.knnnnnnnnnnnkk.','.knwnnnnnnnnnnnk','..kkkkknnkkkkkk.','......knnk......','......knnk......','......knnk......','......knnk......','.....knnk.......','......kk........','................','................','................'],
+ boog:['................','...kk...........','..kSSk..........','..kSkk..........','.kSk..k.........','.kSk...k........','.kSk...k..kk....','.kSk....kwwwk...','.kSwwwwwwwwwwk..','.kSk....kwwwk...','.kSk...k..kk....','.kSk...k........','.kSk..k.........','..kSkk..........','..kSSk..........','...kk...........'],
+ projeksie:['................','....kkkkkk......','...kppppppk.....','..kppppppppk....','..kpkkppkkpk....','..kpkkppkkpk....','..kppppppppk....','..kppppppppk....','..kppppppppk....','..kppppppppk....','..kpkppkppkk....','..kk.kk..kk.....','................','................','................','................'],
+ grense:['................','................','.....gg..gg.....','...gg......gg...','...g........g...','..g..........g..','................','.g............g.','.g............g.','................','..g..........g..','...g........g...','...gg......gg...','.....gg..gg.....','................','................'],
+ groepsdruk:['................','................','................','..o.........o...','..oo.......oo...','...oo.....oo....','....oo...oo.....','.....oo.oo......','.....oo.oo......','....oo...oo.....','...oo.....oo....','..oo.......oo...','..o.........o...','................','................','................'],
+ waterpyp:['................','..........kkkk..','.........knnnnk.','.........knnnk..','........knnnk...','.......knnnk....','......knnnk.....','.....knnnk......','....knnnk.......','...knnnk........','..knnnk.........','.kknnnk.........','.knnnnk.........','.kkkkk..........','................','................'],
+ wysheidstaf:['................','......kkk.......','.....kbbbk......','....kbwbbbk.....','....kbbbbbk.....','.....kbbbk......','......kkk.......','......ksk.......','......ksk.......','......ksk.......','......ksk.......','......ksk.......','......ksk.......','......ksk.......','......kk........','................'],
+ panga:['................','.........kkkk...','.......kkwwwwk..','.....kkwwwwwwk..','....kwwwwwwwk...','...kwwwwwwwk....','..kwwwwwwwk.....','..kwwwwwwk......','.kwwwwwwk.......','.kwwwwwk........','.kwwwkk.........','.kkkk...........','.ksk............','.ksk............','.kk.............','................'],
+ braaivurk:['................','.........n..n...','.........n..n...','.........n..n...','.........nnnn...','..........nn....','.........nn.....','........nn......','.......nn.......','......nn........','.....ss.........','....ss..........','...ss...........','..ss............','..s.............','................'],
+ katapult:['................','..kk.......kk...','.krrk.....krrk..','.kssk.....kssk..','..kssk...kssk...','...kssk.kssk....','....ksssssk.....','.....ksssk......','......kssk......','......kssk......','......kssk......','......kssk......','.......kk.......','................','................','................'],
+ boerboel:['................','................','..kk............','.kSSkkkk........','.kSSSSSSkk......','..kSSSSSSSk.....','..kSSSkSSSSk....','..kSSSSSSSSkkk..','...kSSSSSSSSSSk.','...kSSSSSSkkkkk.','...kSSSSSk......','..kSSSSSk.......','..kSSSSk........','..kkkkk.........','................','................'],
+ doringdraad:['................','................','................','................','................','..n.n..n.n..n.n.','...n....n....n..','.nnnnnnnnnnnnnn.','.nwnnnnwnnnnwnn.','...n....n....n..','..n.n..n.n..n.n.','................','................','................','................','................'],
+ vlambraai:['................','.......k........','......kok.......','......kook......','.....koook......','.....kooook.....','....koooook.....','....kooyyok.....','...kooyyyook....','...koyyyyyok....','...koyywyyok....','....koywyok.....','.....koyok......','......kok.......','................','................'],
+ voorhamer:['................','.......kkkkkk...','......knnnnnnk..','......knwwnnnk..','......knnnnnnk..','.......kkknnk...','......kSskkk....','.....kSsk.......','....kSsk........','...kSsk.........','..kSsk..........','.kSsk...........','.ksk............','.kk.............','................','................'],
+ lem:['................','................','..kk........kk..','..knnk....knnk..','...knnk..knnk...','....knnkknnk....','.....knnnnk.....','....knnwwnnk....','....knnwwnnk....','.....knnnnk.....','....knnkknnk....','...knnk..knnk...','..knnk....knnk..','..kk........kk..','................','................'],
+ r4:['................','.............kk.','............knk.','...........knnk.','..........knnk..','.........knnk...','........knnk....','....kkkknnk.....','...knnnnnk......','...knnkkkk......','..kssknnk.......','..ksk.knk.......','.kssk..kk.......','.kkk............','................','................'],
+ diewet:['................','.....yy..yy.....','...y........y...','...y..kkkk..y...','.....knnnnk.....','.y...knnnnk...y.','.y....kknk....y.','......ksk.......','.y....ksk.....y.','.y....ksk.....y.','......ksk.......','...y...kk...y...','...y........y...','.....yy..yy.....','................','................'],
+ diekudde:['................','.......kk.......','..kk..kSSk..kk..','.kSSk.kSSk.kSSk.','.kSSk..kk..kSSk.','..kk........kk..','................','....kkkkkkk.....','...kSSSSSSSk....','..kSSSSSSSSSk...','..kSSSSSSSSSk...','...kSSSSSSSk....','....kkkkkkk.....','................','................','................'],
+ spitbraai:['................','..k.........k...','.knnnnnnnnnnnnk.','..k..krrrk..k...','.....krrrrk.....','.....krrrk......','......krk.......','................','....o...o.......','...koo.koo.o....','...koyokoyoko...','....kok.kok.....','................','................','................','................'],
+};
+const ICONS={};
+for(const id in ICON_ART){
+  const c=document.createElement('canvas');c.width=c.height=16;
+  const g2=c.getContext('2d');
+  ICON_ART[id].forEach((row,y)=>{for(let x=0;x<16;x++){const ch=row[x];if(ch&&ch!=='.'){g2.fillStyle=ICON_PAL[ch]||'#f0f';g2.fillRect(x,y,1,1);}}});
+  ICONS[id]=c;
+}
+function iconImg(id,px){const c=ICONS[id];return c?'<img src="'+c.toDataURL()+'" alt="" style="width:'+px+'px;height:'+px+'px;image-rendering:pixelated;display:block">':null;}
+function drawIcon(c,ic,x,y,s){const p=c.imageSmoothingEnabled;c.imageSmoothingEnabled=false;c.drawImage(ic,x,y,s,s);c.imageSmoothingEnabled=p;}
+
 /* ============================== CANVAS ============================== */
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
 let VW=0,VH=0,DPR=1,vign=null,darkCv=null,darkCtx=null;
@@ -2178,7 +2217,10 @@ function openLevelUp(){
     else if(c.kind==='genade'){tag='<span class="tag" style="color:var(--red)">GENADE</span>';nm='Genade';ds='Maak elke gewone zombie op die skerm dood.';}
     else if(c.kind==='heal'){tag='<span class="tag">PADKOS</span>';nm='Padkos';ds='Genees 40 LP.';}
     else{tag='<span class="tag">MUNTE</span>';nm='Blikkie Munte';ds='+30 munte.';}
-    el.innerHTML=tag+'<h3>'+nm+'</h3>'+pips+'<p>'+ds+'</p>'+hint+'<span class="key">'+(i+1)+'</span>';
+    let cicon='';
+    const cid=c.kind==='w'?c.id:(c.kind==='combo'?c.combo.id:(c.kind==='r4'?'r4':null));
+    if(cid&&ICONS[cid])cicon='<div style="display:flex;justify-content:center;margin:6px 0 -2px">'+iconImg(cid,32)+'</div>';
+    el.innerHTML=tag+cicon+'<h3>'+nm+'</h3>'+pips+'<p>'+ds+'</p>'+hint+'<span class="key">'+(i+1)+'</span>';
     el.onclick=()=>pickChoice(i);
     el.onkeydown=e=>{if(e.key==='Enter')pickChoice(i)};
     box.appendChild(el);
@@ -2954,22 +2996,23 @@ function drawHUD(){
   for(const w of G.weapons){
     ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(ix,iy,34,34);
     const sup=WEAPONS[w.id].super;
+    const ic=ICONS[w.id];
     if(sup){
       ctx.strokeStyle='rgba(255,240,180,'+(.7+Math.sin(performance.now()/160)*.3).toFixed(2)+')';
       ctx.lineWidth=3.5;ctx.strokeRect(ix,iy,34,34);
-      ctx.fillStyle='#ffe0a0';ctx.textAlign='center';
-      ctx.fillText(WEAPONS[w.id].name[0],ix+17,iy+22);
-      ctx.fillRect(ix+2,iy+29,30,4);
+      if(ic)drawIcon(ctx,ic,ix+1,iy+1,32);
+      else{ctx.fillStyle='#ffe0a0';ctx.textAlign='center';ctx.fillText(WEAPONS[w.id].name[0],ix+17,iy+22);}
+      ctx.fillStyle='#ffe0a0';ctx.fillRect(ix+2,iy+29,30,4);
     }else if(w.evo){
       ctx.strokeStyle='rgba(247,208,96,'+(.7+Math.sin(performance.now()/200)*.3).toFixed(2)+')';
       ctx.lineWidth=3;ctx.strokeRect(ix,iy,34,34);
-      ctx.fillStyle='#f7d060';ctx.textAlign='center';
-      ctx.fillText(EVOS[w.id].name[0],ix+17,iy+22);
-      ctx.fillRect(ix+3,iy+29,28,3);
+      if(ic)drawIcon(ctx,ic,ix+1,iy+1,32);
+      else{ctx.fillStyle='#f7d060';ctx.textAlign='center';ctx.fillText(EVOS[w.id].name[0],ix+17,iy+22);}
+      ctx.fillStyle='#f7d060';ctx.fillRect(ix+3,iy+29,28,3);
     }else{
       ctx.strokeStyle='#e0b64f';ctx.lineWidth=2;ctx.strokeRect(ix,iy,34,34);
-      ctx.fillStyle='#ece5cc';ctx.textAlign='center';
-      ctx.fillText(WEAPONS[w.id].name[0],ix+17,iy+22);
+      if(ic)drawIcon(ctx,ic,ix+1,iy+1,32);
+      else{ctx.fillStyle='#ece5cc';ctx.textAlign='center';ctx.fillText(WEAPONS[w.id].name[0],ix+17,iy+22);}
       ctx.fillStyle='#e0b64f';
       for(let k=0;k<w.lvl;k++)ctx.fillRect(ix+3+k*6,iy+29,4,3);
     }
@@ -3304,6 +3347,7 @@ function renderGids(){
       h+='<span style="color:#5b614a;min-width:120px;font-size:19px">???</span><span style="color:#4a5038;font-size:16px;flex:1">— nog nie ontdek nie —</span></div>';
       continue;
     }
+    if(ICONS[id])h+='<span style="flex:none;align-self:center">'+iconImg(id,20)+'</span>';
     h+='<span style="color:var(--ink);min-width:120px;font-size:19px">'+esc(W.name)+'</span>';
     if(E&&seen.e[id]){
       const pn=PASSIVES[E.pass]?PASSIVES[E.pass].name:E.pass;
@@ -3360,13 +3404,14 @@ function renderGids(){
   b.innerHTML=h;
 }
 /* VS-styl pouse-oorsig: jou gleuwe, vlakke en evolusie-resepte */
-function pChip(txt,col,pips,pmax){
+function pChip(txt,col,pips,pmax,icid){
   let ph='';
   if(pmax)ph='<span style="display:flex;gap:2px;justify-content:center;margin-top:2px">'+
     Array.from({length:pmax},(_,k)=>'<span style="width:4px;height:4px;background:'+(k<pips?col:'#2c3a1e')+'"></span>').join('')+'</span>';
+  const inner=(icid&&ICONS[icid])?iconImg(icid,28):esc(txt);
   return '<span style="display:inline-flex;flex-direction:column;align-items:center;width:40px;flex:none">'+
     '<span style="width:32px;height:32px;border:2px solid '+col+';background:rgba(10,14,7,.75);color:'+col+
-    ';display:flex;align-items:center;justify-content:center;font-size:19px">'+esc(txt)+'</span>'+ph+'</span>';
+    ';display:flex;align-items:center;justify-content:center;font-size:19px">'+inner+'</span>'+ph+'</span>';
 }
 function renderPause(){
   const b=document.getElementById('pauseBody');
@@ -3379,7 +3424,7 @@ function renderPause(){
     const w=G.weapons[i];
     if(!w){h+=pChip('',leeg,0,0);continue;}
     const sup=WEAPONS[w.id].super;
-    h+=pChip((w.evo?EVOS[w.id]:WEAPONS[w.id]).name[0],sup?supCol:(w.evo?evoCol:gold),w.lvl,sup?0:WEAPON_MAX);
+    h+=pChip((w.evo?EVOS[w.id]:WEAPONS[w.id]).name[0],sup?supCol:(w.evo?evoCol:gold),w.lvl,sup?0:WEAPON_MAX,w.id);
   }
   h+='</div>';
   h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px"><span style="font-size:17px;color:var(--dim);width:86px;flex:none">Passiewe</span>';
@@ -3390,7 +3435,7 @@ function renderPause(){
   for(const w of G.weapons){
     const W=WEAPONS[w.id];
     if(W.super){
-      rows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+pChip(W.name[0],supCol,0,0)+
+      rows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+pChip(W.name[0],supCol,0,0,w.id)+
         '<span style="color:'+supCol+';font-size:18px">'+esc(W.name)+'</span><span style="color:'+dim+';font-size:16px">— super-wapen</span></div>');
       continue;
     }
@@ -3398,7 +3443,7 @@ function renderPause(){
     const P=PASSIVES[E.pass], has=!!G.passives[E.pass], maxed=w.lvl>=WEAPON_MAX;
     if(w.evo){
       rows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;opacity:.8">'+
-        pChip(W.name[0],gold,0,0)+plus+pChip(P.name[0],pasCol,0,0)+eq+pChip(E.name[0],evoCol,0,0)+
+        pChip(W.name[0],gold,0,0,w.id)+plus+pChip(P.name[0],pasCol,0,0)+eq+pChip(E.name[0],evoCol,0,0,w.id)+
         '<span style="color:'+evoCol+';font-size:18px">'+esc(E.name)+' ✓</span></div>');
     }else{
       let st;
@@ -3410,9 +3455,9 @@ function renderPause(){
         st='<span style="color:'+dim+';font-size:16px">('+esc(need.join(' + '))+')</span>';
       }
       rows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-        pChip(W.name[0],gold,w.lvl,WEAPON_MAX)+plus+
+        pChip(W.name[0],gold,w.lvl,WEAPON_MAX,w.id)+plus+
         pChip(P.name[0],has?pasCol:dim,G.passives[E.pass]||0,PASSIVE_MAX)+eq+
-        pChip(E.name[0],maxed&&has?evoCol:dim,0,0)+
+        pChip(E.name[0],maxed&&has?evoCol:dim,0,0,w.id)+
         '<span style="font-size:18px"><span style="color:var(--ink)">'+esc(W.name)+'</span>'+
         '<span style="color:'+(has?pasCol:dim)+'"> + '+esc(P.name)+(has?' ✓':'')+'</span>'+
         '<span style="color:'+evoCol+'"> → '+esc(E.name)+'</span></span> '+st+'</div>');
@@ -3432,8 +3477,8 @@ function renderPause(){
     let st=ready?'<span style="color:'+supCol+';font-size:16px">GEREED — kies SAAMSMELT by vlak-op!</span>'
       :'<span style="color:'+dim+';font-size:16px">(evolueer albei eers'+((!wa||!wb)?' — dra albei saam':'')+')</span>';
     crows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-      pChip(nm(cb.a)[0],wa&&wa.evo?evoCol:dim,0,0)+plus+pChip(nm(cb.b)[0],wb&&wb.evo?evoCol:dim,0,0)+eq+
-      pChip(cb.name[0],ready?supCol:dim,0,0)+
+      pChip(nm(cb.a)[0],wa&&wa.evo?evoCol:dim,0,0,cb.a)+plus+pChip(nm(cb.b)[0],wb&&wb.evo?evoCol:dim,0,0,cb.b)+eq+
+      pChip(cb.name[0],ready?supCol:dim,0,0,cb.id)+
       '<span style="font-size:18px"><span style="color:'+evoCol+'">'+esc(nm(cb.a))+'</span><span style="color:'+dim+'"> + </span>'+
       '<span style="color:'+evoCol+'">'+esc(nm(cb.b))+'</span><span style="color:'+supCol+'"> → '+esc(cb.name)+'</span></span> '+st+'</div>');
   }
@@ -3441,8 +3486,8 @@ function renderPause(){
     const guns=['windbuks','rewolwer','haelgeweer','uzi'];
     const n=guns.filter(id=>G.weapons.find(w=>w.id===id&&w.lvl>=WEAPON_MAX)).length;
     crows.push('<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
-      guns.map(id=>pChip(WEAPONS[id].name[0],G.weapons.find(w=>w.id===id&&w.lvl>=WEAPON_MAX)?gold:dim,0,0)).join(plus)+eq+
-      pChip('R',n>=4?supCol:dim,0,0)+
+      guns.map(id=>pChip(WEAPONS[id].name[0],G.weapons.find(w=>w.id===id&&w.lvl>=WEAPON_MAX)?gold:dim,0,0,id)).join(plus)+eq+
+      pChip('R',n>=4?supCol:dim,0,0,'r4')+
       '<span style="font-size:18px;color:'+supCol+'">R4</span><span style="color:'+dim+';font-size:16px"> — al vier gewere vlak 5 ('+n+'/4)</span></div>');
   }
   if(crows.length){
