@@ -3526,7 +3526,7 @@ function tryResume(){
 }
 function lockedShake(el){
   el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');
-  tone(90,.07,'square',.05,-30);
+  try{SND.spit();}catch(_){} // klank is bysaak — mag nooit die kieslys breek nie
 }
 function chapThumb(locked){
   const c=document.createElement('canvas');c.width=120;c.height=64;
