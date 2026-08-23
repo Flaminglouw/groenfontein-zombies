@@ -296,6 +296,12 @@ const WEAPONS={
  voorhamer:{name:'Voorhamer',desc:'Swaai in ’n volle kring en stamp alles terug.',
   t:[{cd:1.6,dmg:16,range:82,kb:26},{cd:1.5,dmg:20,range:90,kb:28},{cd:1.35,dmg:25,range:98,kb:30},{cd:1.2,dmg:30,range:106,kb:33},{cd:1,dmg:38,range:118,kb:36,slam:1}],
   up:['+skade, wyer','+skade, wyer','+skade, vinniger','GRONDSLAG: skokgolf!']},
+ diewet:{name:'Die Wet',desc:'Pa se wet: hamerslag + koeël-ring.',super:true,
+  t:[{cd:.9,dmg:36,range:126,kb:40}]},
+ diekudde:{name:'Die Kudde',desc:'Vier honde en ’n weerlose leër.',super:true,
+  t:[{count:4,dmg:28,spd:3.3}]},
+ spitbraai:{name:'Spitbraai',desc:'Brandende spete wat op sterftes genees.',super:true,
+  t:[{cd:.85,dmg:32,count:4,spd:480}]},
  lem:{name:'Windpomp-lem',desc:'’n Draaiende lem wat uitvlieg en terugkeer.',
   t:[{cd:2.3,dmg:15,count:1,spd:400},{cd:2.1,dmg:19,count:1,spd:400},{cd:1.9,dmg:23,count:2,spd:410},{cd:1.7,dmg:27,count:2,spd:420},{cd:1.45,dmg:33,count:3,spd:430}],
   up:['+4 skade','+1 lem','+4 skade','+1 lem']},
@@ -333,6 +339,12 @@ const EVOS={
  katapult:{pass:'kruithoring',name:'Rotsval',desc:'’n Reën van klippe wat oopbars.'},
  vlambraai:{pass:'boerewors',name:'Helvuur',desc:'Vlamme laat brandende grond agter.'},
 };
+// twee ge-evolueerde wapens smelt saam tot 'n super-wapen
+const COMBOS=[
+ {id:'diewet',    a:'voorhamer',b:'rewolwer',   name:'Die Wet',   desc:'Hamerslag én ’n ring van koeëls.'},
+ {id:'diekudde',  a:'boerboel', b:'wysheidstaf',name:'Die Kudde', desc:'Vier honde plus ’n omgekeerde leër.'},
+ {id:'spitbraai', a:'braaivurk',b:'vlambraai',  name:'Spitbraai', desc:'Brandende spete wat jou genees.'},
+];
 const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=6, MAX_P=4;
 const SKILLS=[
  {id:'spiere',name:'Spiere',desc:'+4% skade per rang',max:5,cost:r=>40*Math.pow(3,r)},
@@ -598,7 +610,7 @@ function recalc(){
 function addWeapon(id){
   const w={id,lvl:1,cd:0,seq:0};
   G.weapons.push(w);
-  if(id==='boerboel')rebuildDogs();
+  if(id==='boerboel'||id==='diekudde')rebuildDogs();
   return w;
 }
 const DOG_SKINS=[
@@ -607,8 +619,9 @@ const DOG_SKINS=[
   {col:'#9a7248',dark:'#6b4a2c',eye:'#2b2b26'}, // derde hond
 ];
 function rebuildDogs(){
-  const w=G.weapons.find(w=>w.id==='boerboel');if(!w)return;
-  const n=w.evo?3:WEAPONS.boerboel.t[w.lvl-1].count;
+  const kudde=G.weapons.find(w=>w.id==='diekudde');
+  const w=kudde||G.weapons.find(w=>w.id==='boerboel');if(!w)return;
+  const n=kudde?4:(w.evo?3:WEAPONS.boerboel.t[w.lvl-1].count);
   G.dogs=[];for(let i=0;i<n;i++)G.dogs.push(Object.assign({off:i/n*TAU,ang:i/n*TAU},DOG_SKINS[i%3]));
 }
 const xpNeed=l=>Math.floor(6+l*4+Math.pow(l,1.6));
@@ -808,12 +821,52 @@ function aimDir(){
 const skipSet=new Set();
 function fireWeapon(w,dt){
   const T=WEAPONS[w.id].t[w.lvl-1];
-  if(w.id==='boerboel'){ // aanhoudend
-    const sp=T.spd, ddmg=T.dmg*G.dmgMul*(w.evo?1.2:1);
+  // ===== SUPER-WAPENS =====
+  if(w.id==='diewet'){ // Donderhamer + Ou Ses
+    const P=G.projs, range=T.range*G.areaMul;
+    near(G.x,G.y,range+30,NB);
+    for(const z of NB){if(z.dead)continue;const d2=dist2(G.x,G.y,z.x,z.y);
+      if(d2<(range+z.r)*(range+z.r)){const d=Math.sqrt(d2)||1;bladeHit(z,T.dmg*G.dmgMul,(z.x-G.x)/d*T.kb,(z.y-G.y)/d*T.kb);}}
+    G.slashes.push({x:G.x,y:G.y,ang:0,t:.28,range:range,arc:TAU});
+    G.spin={t:.35,dur:.35};
+    const sr=range*1.9;near(G.x,G.y,sr+30,NB);
+    for(const z of NB){if(z.dead)continue;const d2=dist2(G.x,G.y,z.x,z.y);
+      if(d2<(sr+z.r)*(sr+z.r)){const d=Math.sqrt(d2)||1;wHit(z,T.dmg*.5*G.dmgMul,(z.x-G.x)/d*T.kb*.6,(z.y-G.y)/d*T.kb*.6,false);}}
+    G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.35,r1:sr});
+    for(let i=0;i<10;i++){const a=i/10*TAU;
+      P.push({k:'pellet',x:G.x,y:G.y,vx:Math.cos(a)*620,vy:Math.sin(a)*620,r:5,dmg:T.dmg*.7*G.dmgMul*G.gunMul,pierce:3,life:1.2,big:true,hit:new Set()});}
+    G.shake=Math.max(G.shake,4);SND.boom();SND.bang();
+    w.cd=T.cd*G.cdMul;return;
+  }
+  if(w.id==='diekudde'){ // Die Trop + Deurbraak — honde in boerboel-blok hanteer, hier die omkeer-pols
+    w.cd-=dt;
+    if(w.cd<=0){
+      w.cd=6*G.cdMul;
+      near(G.x,G.y,240,NB);let n=0;
+      for(const z of NB){if(n>=3)break;if(z.dead||z.type==='boss'||z.ally>0)continue;
+        if(dist2(G.x,G.y,z.x,z.y)<270*270){z.ally=6;z.allyCd=0;z.confT=0;z.stun=0;n++;}}
+      if(n){G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.45,r1:240,col:'#7ec8ff'});SND.hum();}
+    }
+    // val deur na die honde-logika hieronder
+  }
+  if(w.id==='spitbraai'){ // Vleisvurk + Helvuur
+    const dir=aimDir(),base=Math.atan2(dir[1],dir[0]);
+    for(let i=0;i<T.count;i++){
+      const a=base+(i-(T.count-1)/2)*.22;
+      G.projs.push({k:'vurk',x:G.x,y:G.y,vx:Math.cos(a)*T.spd,vy:Math.sin(a)*T.spd,r:8,dmg:T.dmg*G.dmgMul,pierce:999,life:1.2,rot:a,vleis:true,fireTrail:true,hit:new Set()});
+    }
+    SND.shoot();SND.slash();
+    w.cd=T.cd*G.cdMul;return;
+  }
+  if(w.id==='boerboel'||w.id==='diekudde'){ // aanhoudend
+    const sup=w.id==='diekudde';
+    const ddmg=T.dmg*G.dmgMul*(sup?1:(w.evo?1.2:1));
     // honde-fluisteraar: Pa se honde byt dodelik
     let ik=0;
     if(G.char.id==='pa')ik=.045+.005*w.lvl;
+    if(sup)ik=Math.max(ik,.06);
     else if(w.lvl>=WEAPON_MAX)ik=.05;
+    const sp=T.spd;
     for(const d of G.dogs){
       d.ang+=sp*dt;
       d.x=G.x+Math.cos(d.ang)*72;d.y=G.y+Math.sin(d.ang)*72;
@@ -828,7 +881,7 @@ function fireWeapon(w,dt){
           z.dogCd=.4;
         }
       }
-      if(w.evo){ // Die Trop gaan haal juwele
+      if(w.evo||sup){ // Die Trop / Die Kudde gaan haal juwele
         for(const g of G.gems){
           if(!g.pull&&dist2(d.x,d.y,g.x,g.y)<140*140)g.pull=true;
         }
@@ -1562,7 +1615,9 @@ function update(dt){
         if(d<28)p.dead=true;
       }
     }
-    if(p.k==='vurk')p.rot+=dt*2;
+    if(p.k==='vurk'){p.rot+=dt*2;
+      if(p.fireTrail){p.ft=(p.ft||0)-dt;if(p.ft<=0&&G.fires.length<40){p.ft=.12;G.fires.push({x:p.x,y:p.y,r:22,t:1.6,dmg:p.dmg*.35,tick:0});}}
+    }
     p.x+=p.vx*dt;p.y+=p.vy*dt;
     p.life-=dt;
     if(p.life<=0||p.x<-40||p.x>WORLD_W+40||p.y<-40||p.y>WORLD_H+40){
@@ -1699,7 +1754,14 @@ function buildChoices(){
   }
   while(out.length<3)out.push(out.length===1?{kind:'heal'}:{kind:'munt'});
   if(!out.length)out.push({kind:'heal'},{kind:'munt'},{kind:'heal'});
-  if(G.genadeReady)out[0]={kind:'genade'}; // baas se Genade-kaart
+  // SAAMSMELT: as twee ge-evolueerde maats teenwoordig is
+  const combo=COMBOS.find(cb=>{
+    if(G.weapons.some(w=>w.id===cb.id))return false;
+    const wa=G.weapons.find(w=>w.id===cb.a&&w.evo), wb=G.weapons.find(w=>w.id===cb.b&&w.evo);
+    return wa&&wb;
+  });
+  if(combo)out[0]={kind:'combo',combo};
+  if(G.genadeReady)out[0]={kind:'genade'}; // baas se Genade-kaart wen die gleuf
   return out;
 }
 let choices=[];
@@ -1721,7 +1783,8 @@ function openLevelUp(){
       tag=c.nu?'<span class="tag">NUUT!</span>':'<span class="tag up">VLAK '+c.lvl+'</span>';
       nm=P.name;ds=P.desc;
       pips='<div class="pips">'+Array.from({length:PASSIVE_MAX},(_,k)=>'<span class="pip'+(k<c.lvl?' on':'')+'"></span>').join('')+'</div>';
-    }else if(c.kind==='genade'){tag='<span class="tag" style="color:var(--red)">GENADE</span>';nm='Genade';ds='Maak elke gewone zombie op die skerm dood.';}
+    }else if(c.kind==='combo'){tag='<span class="tag" style="color:#f7d060">SAAMSMELT!</span>';nm=c.combo.name;ds=c.combo.desc;}
+    else if(c.kind==='genade'){tag='<span class="tag" style="color:var(--red)">GENADE</span>';nm='Genade';ds='Maak elke gewone zombie op die skerm dood.';}
     else if(c.kind==='heal'){tag='<span class="tag">PADKOS</span>';nm='Padkos';ds='Genees 40 LP.';}
     else{tag='<span class="tag">MUNTE</span>';nm='Blikkie Munte';ds='+30 munte.';}
     el.innerHTML=tag+'<h3>'+nm+'</h3>'+pips+'<p>'+ds+'</p><span class="key">'+(i+1)+'</span>';
@@ -1748,6 +1811,13 @@ function pickChoice(i){
     else addWeapon(c.id);
   }else if(c.kind==='p'){
     G.passives[c.id]=(G.passives[c.id]||0)+1;recalc();
+  }else if(c.kind==='combo'){
+    const cb=c.combo;
+    G.weapons=G.weapons.filter(w=>w.id!==cb.a&&w.id!==cb.b);
+    addWeapon(cb.id);
+    rebuildDogs();
+    banner('SAAMSMELT: '+cb.name.toUpperCase()+'!');
+    SND.lvl();boomParts(G.x,G.y,40,'#f7d060');
   }else if(c.kind==='genade'){
     G.genadeReady=false;let n=0;
     for(const z of G.zombies){
@@ -2470,7 +2540,14 @@ function drawHUD(){
   ctx.font='19px VT323, monospace';
   for(const w of G.weapons){
     ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(ix,iy,34,34);
-    if(w.evo){
+    const sup=WEAPONS[w.id].super;
+    if(sup){
+      ctx.strokeStyle='rgba(255,240,180,'+(.7+Math.sin(performance.now()/160)*.3).toFixed(2)+')';
+      ctx.lineWidth=3.5;ctx.strokeRect(ix,iy,34,34);
+      ctx.fillStyle='#ffe0a0';ctx.textAlign='center';
+      ctx.fillText(WEAPONS[w.id].name[0],ix+17,iy+22);
+      ctx.fillRect(ix+2,iy+29,30,4);
+    }else if(w.evo){
       ctx.strokeStyle='rgba(247,208,96,'+(.7+Math.sin(performance.now()/200)*.3).toFixed(2)+')';
       ctx.lineWidth=3;ctx.strokeRect(ix,iy,34,34);
       ctx.fillStyle='#f7d060';ctx.textAlign='center';
@@ -2789,6 +2866,15 @@ function renderGids(){
       h+='<span style="color:var(--dim);font-size:16px;flex:1">+ '+esc(pn)+' → <span style="color:#f7d060">'+esc(E.name)+'</span> <span style="color:#6d7358">'+esc(E.desc)+'</span></span>';
     }else h+='<span style="color:#6d7358;font-size:16px;flex:1">— nog geen evolusie —</span>';
     h+='</div>';
+  }
+  h+='</div>';
+  h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:#ffe0a0;margin:16px 0 6px">SAAMSMELT — SUPER-WAPENS</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr;gap:5px">';
+  for(const cb of COMBOS){
+    const en=id=>EVOS[id]?EVOS[id].name:(WEAPONS[id]?WEAPONS[id].name:id);
+    h+='<div style="border-bottom:1px solid #2c3a1e;padding:3px 0;font-size:17px">';
+    h+='<span style="color:var(--dim)">'+esc(en(cb.a))+' + '+esc(en(cb.b))+' → </span>';
+    h+='<span style="color:#ffe0a0">'+esc(cb.name)+'</span> <span style="color:#6d7358;font-size:15px">'+esc(cb.desc)+'</span></div>';
   }
   h+='</div>';
   h+='<div style="font-family:\'Press Start 2P\',monospace;font-size:11px;color:var(--gold);margin:16px 0 6px">PASSIEWE</div>';
