@@ -2220,13 +2220,23 @@ function render(){
       ctx.restore();
     }
   }
-  // spoeg-projektiele
-  for(const p of G.eprojs){
-    if(p.x<camX-30||p.x>camX+VW+30||p.y<camY-30||p.y>camY+VH+30)continue;
-    const h=Math.sin((1-p.t/p.tot)*Math.PI)*30;
-    ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(p.x,p.y,5,2,0,0,TAU);ctx.fill();
-    ctx.fillStyle='#8fd06a';ctx.beginPath();ctx.arc(p.x,p.y-h,4.5,0,TAU);ctx.fill();
-    ctx.fillStyle='#c5e89a';ctx.beginPath();ctx.arc(p.x-1.5,p.y-h-1.5,1.6,0,TAU);ctx.fill();
+  // spoeg-projektiele — rooi knipperend sodat jy hulle sien kom
+  {
+    const flash=(performance.now()/90|0)%2===0;
+    for(const p of G.eprojs){
+      if(p.x<camX-30||p.x>camX+VW+30||p.y<camY-30||p.y>camY+VH+30)continue;
+      const h=Math.sin((1-p.t/p.tot)*Math.PI)*30;
+      // grond-merk waar dit gaan land
+      ctx.fillStyle='rgba(200,40,30,.35)';ctx.beginPath();ctx.ellipse(p.x,p.y,7,3,0,0,TAU);ctx.fill();
+      // gloed
+      ctx.globalAlpha=flash?.55:.3;ctx.fillStyle='#ff3020';
+      ctx.beginPath();ctx.arc(p.x,p.y-h,9,0,TAU);ctx.fill();ctx.globalAlpha=1;
+      // kern (knipper tussen fel rooi en wit-warm)
+      ctx.fillStyle=flash?'#ff3020':'#ffd0c0';
+      ctx.beginPath();ctx.arc(p.x,p.y-h,5,0,TAU);ctx.fill();
+      ctx.fillStyle=flash?'#ffe0d0':'#ff5030';
+      ctx.beginPath();ctx.arc(p.x-1.5,p.y-h-1.5,2,0,TAU);ctx.fill();
+    }
   }
   // partikels
   for(const p of G.parts){
