@@ -2015,13 +2015,15 @@ function render(){
   if(!G){ctx.fillStyle='rgba(10,14,7,.2)';ctx.fillRect(0,0,VW,VH);ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);return;}
   const na=nightAlpha();
   ctx.save();ctx.translate(-camX,-camY);
-  // bloedkolle
-  ctx.fillStyle='rgba(45,58,24,.55)';
+  // bloedkolle — donkerrooi
   for(const sp of G.splats){
     if(sp.x<camX-30||sp.x>camX+VW+30||sp.y<camY-30||sp.y>camY+VH+30)continue;
     ctx.save();ctx.translate(sp.x,sp.y);ctx.rotate(sp.rot);
+    ctx.fillStyle='rgba(96,20,16,.5)';
     ctx.beginPath();ctx.ellipse(0,0,sp.r,sp.r*.6,0,0,TAU);ctx.fill();
+    ctx.fillStyle='rgba(130,28,22,.5)';
     ctx.beginPath();ctx.ellipse(sp.r*.5,sp.r*.35,sp.r*.4,sp.r*.25,0,0,TAU);ctx.fill();
+    ctx.beginPath();ctx.ellipse(-sp.r*.45,-sp.r*.3,sp.r*.22,sp.r*.16,0,0,TAU);ctx.fill();
     ctx.restore();
   }
   // suurpoele
@@ -2434,6 +2436,28 @@ const SB_KEY='sb_publishable_Wdi09zwmq7SXSELWp5SASA_ehWbqn-P';
 const SB_H={apikey:SB_KEY,'Authorization':'Bearer '+SB_KEY};
 let LB={scores:[]}, lbShared=false, lbWritable=null;
 const CHAR_LETTER={louw:'L',altus:'A',danie:'D',pa:'P'};
+const CHAR_NAME={louw:'Louw',altus:'Altus',danie:'Danie',pa:'Pa'};
+const HEAD_CROP={
+ louw:{fx:0.42,fy:0.31,fw:0.34,fh:0.30},
+ pa:{fx:0.33,fy:0.04,fw:0.34,fh:0.32},
+ danie:{fx:0.26,fy:0.02,fw:0.46,fh:0.30},
+ altus:{fx:0.28,fy:0.02,fw:0.44,fh:0.30},
+};
+function charHead(cid){
+  const D=26,cv2=document.createElement('canvas');cv2.width=D;cv2.height=D;
+  const c=cv2.getContext('2d');c.imageSmoothingEnabled=false;
+  c.fillStyle='#222c19';c.fillRect(0,0,D,D);
+  const sm=SPRITE_META[cid],sp=SPRITES[cid],cr=HEAD_CROP[cid];
+  if(sm&&sp&&sp.complete&&sp.naturalWidth&&cr){
+    const S=sm.states.idle;
+    c.drawImage(sp,cr.fx*sm.cellw,S.r*sm.cellh+cr.fy*sm.cellh,cr.fw*sm.cellw,cr.fh*sm.cellh,0,0,D,D);
+  }else{
+    c.fillStyle='#e0b64f';c.font='14px monospace';c.textAlign='center';
+    c.fillText(CHAR_LETTER[cid]||'?',D/2,D-8);
+  }
+  cv2.style.cssText='width:26px;height:26px;image-rendering:pixelated;border:2px solid var(--line);flex:0 0 auto';
+  return cv2;
+}
 async function lbInit(){
   try{
     const r=await fetch(SB_URL+'/rest/v1/scores?select=naam,karakter,telling,tyd,dooies,puur&order=telling.desc&limit=25',{headers:SB_H});
@@ -2484,15 +2508,16 @@ function renderBoard(){
   const mkspan=(cls,txt,style)=>{const s=document.createElement('span');s.className=cls;if(style)s.style.cssText=style;s.textContent=txt;return s;};
   const row=(medal,e)=>{
     const d=document.createElement('div');d.className='skill-row';
-    d.appendChild(mkspan('nm',medal,'min-width:34px'));
+    d.appendChild(mkspan('nm',medal,'min-width:30px'));
+    d.appendChild(charHead(e.c));
     // naam word as teks gebou (geen HTML), so ’n kwaai naam kan niks injekteer nie
-    const nm=mkspan('nm','','flex:1');
-    nm.appendChild(document.createTextNode(String(e.n==null?'?':e.n).slice(0,16)+' '));
-    nm.appendChild(mkspan('','('+(CHAR_LETTER[e.c]||'?')+')','color:#6d7358'));
+    const nm=mkspan('nm','','flex:1;min-width:0');
+    nm.appendChild(document.createTextNode(String(e.n==null?'?':e.n).slice(0,16)));
+    if(CHAR_NAME[e.c])nm.appendChild(mkspan('',' · '+CHAR_NAME[e.c],'color:#6d7358'));
     if(e.p)nm.appendChild(mkspan('',' ★','color:#7fc95e'));
     d.appendChild(nm);
-    d.appendChild(mkspan('ds',fmtT(e.t||0),'flex:0;min-width:60px'));
-    d.appendChild(mkspan('nm',fmt(e.s),'color:var(--gold);min-width:80px;text-align:right'));
+    d.appendChild(mkspan('ds',fmtT(e.t||0),'flex:0;min-width:52px'));
+    d.appendChild(mkspan('nm',fmt(e.s),'color:var(--gold);min-width:76px;text-align:right'));
     box.appendChild(d);
   };
   const meds=['🥇','🥈','🥉'];
