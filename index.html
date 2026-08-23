@@ -437,6 +437,9 @@ const WEAPONS={
  lem:{name:'Windpomp-lem',desc:'’n Draaiende lem wat uitvlieg en terugkeer.',
   t:[{cd:2.3,dmg:15,count:1,spd:400},{cd:2.1,dmg:19,count:1,spd:400},{cd:1.9,dmg:23,count:2,spd:410},{cd:1.7,dmg:27,count:2,spd:420},{cd:1.45,dmg:33,count:3,spd:430}],
   up:['+4 skade','+1 lem','+4 skade','+1 lem']},
+ potdeksel:{name:'Potdeksel',desc:'Ysterdeksels wat om jou draai, als wegklap en spoeg keer.',
+  t:[{count:1,dmg:10,r:58,spd:2.2},{count:1,dmg:14,r:62,spd:2.4},{count:2,dmg:18,r:66,spd:2.7},{count:2,dmg:23,r:70,spd:3},{count:3,dmg:28,r:76,spd:3.4}],
+  up:['+skade','+1 deksel','+skade, wyer','+1 deksel, vinniger']},
 };
 const PASSIVES={
  biltong:{name:'Biltong',desc:'+20 LP en genees stadig.'},
@@ -468,6 +471,7 @@ const EVOS={
  boog:{pass:'slypsteen',name:'Skerpskutter',desc:'Elke pyl kritiek en boor deur almal.'},
  waterpyp:{pass:'kakie',name:'Breekyster',desc:'Altyd verdwaas, wyer en harder.'},
  lem:{pass:'slypsteen',name:'Sirkelsaag',desc:'Meer, groter lemme wat vinniger sny.'},
+ potdeksel:{pass:'veldskoene',name:'Skottelbraai',desc:'Vier warm skottels, wyer en vinniger.'},
  katapult:{pass:'kruithoring',name:'Rotsval',desc:'’n Reën van klippe wat oopbars.'},
  vlambraai:{pass:'boerewors',name:'Helvuur',desc:'Vlamme laat brandende grond agter.'},
  grense:{pass:'magneet',name:'Elektriese Heining',desc:'Die grens skok en vertraag als wat daaraan raak.'},
@@ -480,7 +484,7 @@ const COMBOS=[
  {id:'diekudde',  a:'boerboel', b:'wysheidstaf',name:'Die Kudde', desc:'Vier honde plus ’n omgekeerde leër.'},
  {id:'spitbraai', a:'braaivurk',b:'vlambraai',  name:'Spitbraai', desc:'Brandende spete wat jou genees.'},
 ];
-const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=6, MAX_P=6;
+const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=7, MAX_P=6;
 const SKILLS=[
  {id:'spiere',name:'Spiere',desc:'+4% skade per rang',max:5,cost:r=>40*Math.pow(3,r)},
  {id:'taai',name:'Taai Vel',desc:'+10 LP per rang',max:5,cost:r=>35*Math.pow(3,r)},
@@ -524,6 +528,7 @@ const ICON_ART={
  diewet:['................','.....yy..yy.....','...y........y...','...y..kkkk..y...','.....knnnnk.....','.y...knnnnk...y.','.y....kknk....y.','......ksk.......','.y....ksk.....y.','.y....ksk.....y.','......ksk.......','...y...kk...y...','...y........y...','.....yy..yy.....','................','................'],
  diekudde:['................','.......kk.......','..kk..kSSk..kk..','.kSSk.kSSk.kSSk.','.kSSk..kk..kSSk.','..kk........kk..','................','....kkkkkkk.....','...kSSSSSSSk....','..kSSSSSSSSSk...','..kSSSSSSSSSk...','...kSSSSSSSk....','....kkkkkkk.....','................','................','................'],
  spitbraai:['................','..k.........k...','.knnnnnnnnnnnnk.','..k..krrrk..k...','.....krrrrk.....','.....krrrk......','......krk.......','................','....o...o.......','...koo.koo.o....','...koyokoyoko...','....kok.kok.....','................','................','................','................'],
+ potdeksel:['................','.....kkkkkk.....','...kknnnnnnkk...','..knnwwnnnnnnk..','..knwnnnnnnnnk..','.knwnnnnnnnnnnk.','.knwnnnkknnnnnk.','.knnnnkssknnnnk.','.knnnnkssknnnnk.','.knnnnnkknnnnnk.','.knnnnnnnnnnnnk.','..knnnnnnnnnnk..','..kknnnnnnnnkk..','....kkkkkkkk....','................','................'],
 };
 const ICONS={};
 for(const id in ICON_ART){
@@ -1138,6 +1143,15 @@ function wHit(z,dmg,kx,ky,blade){
   else hurtZombie(z,dmg,kx,ky);
 }
 function bladeHit(z,dmg,kx,ky){wHit(z,dmg,kx,ky,true);}
+function slashSpit(x,y,range,ang,arc){ // hou-wapens slaan spoeg uit die lug
+  for(const s of G.eprojs){
+    if(s.dead)continue;
+    const d=Math.hypot(s.x-x,s.y-y);
+    if(d>range+9)continue;
+    if(arc!=null){let za=Math.atan2(s.y-y,s.x-x)-ang;za=((za+Math.PI)%TAU+TAU)%TAU-Math.PI;if(Math.abs(za)>arc/2)continue;}
+    s.dead=true;boomParts(s.x,s.y,4,'#7fb069');
+  }
+}
 
 /* ============================== WEAPONS FIRE ============================== */
 function nearestZ(x,y,maxD,skip){
@@ -1207,6 +1221,27 @@ function fireWeapon(w,dt){
       }
       SND.bang();w.cd=T.cd*G.cdMul;
     }else w.cd=.1;
+    return;
+  }
+  if(w.id==='potdeksel'){ // aanhoudend: deksels draai om jou
+    const evo=w.evo, n=evo?4:T.count, rad=T.r+(evo?16:0), sp=T.spd*(evo?1.25:1);
+    w.ang=(w.ang||0)+sp*dt;
+    for(let i=0;i<n;i++){
+      const a=w.ang+i/n*TAU, lx=G.x+Math.cos(a)*rad, ly=G.y+Math.sin(a)*rad;
+      near(lx,ly,34,NB);
+      for(const z of NB){
+        if(z.dead||z.lidCd>0||z.ally>0)continue;
+        if(dist2(lx,ly,z.x,z.y)<(14+z.r)*(14+z.r)){
+          const d=Math.hypot(z.x-G.x,z.y-G.y)||1;
+          wHit(z,T.dmg*G.dmgMul*(evo?1.2:1),(z.x-G.x)/d*(evo?34:22),(z.y-G.y)/d*(evo?34:22),false);
+          z.lidCd=.5;
+        }
+      }
+      for(const s of G.eprojs){ // deksel keer spoeg
+        if(s.dead)continue;
+        if(dist2(lx,ly,s.x,s.y)<23*23){s.dead=true;boomParts(s.x,s.y,4,'#7fb069');}
+      }
+    }
     return;
   }
   if(w.id==='boerboel'||w.id==='diekudde'){ // aanhoudend
@@ -1319,6 +1354,7 @@ function fireWeapon(w,dt){
     }
     G.slashes.push({x:G.x,y:G.y,ang:0,t:.28,range:range,arc:TAU});
     G.spin={t:.35,dur:.35};
+    slashSpit(G.x,G.y,range,null,null);
     if(T.slam||w.evo){ // Donderhamer: elke swaai dreun
       const sr=range*1.9;
       near(G.x,G.y,sr+30,NB);
@@ -1341,6 +1377,7 @@ function fireWeapon(w,dt){
     const dir=aimDir(),a=Math.atan2(dir[1],dir[0]);
     const range=T.range*(w.evo?1.2:1), arc=T.arc*(w.evo?1.5:1);
     G.slashes.push({x:G.x,y:G.y,ang:a,t:.15,range:range,arc:arc});
+    slashSpit(G.x,G.y,range,a,arc);
     near(G.x,G.y,range+30,NB);
     let hit=false;
     for(const z of NB){
@@ -1421,6 +1458,7 @@ function fireWeapon(w,dt){
     for(let i=0;i<cnt;i++){
       const a=base+i*Math.PI;
       G.slashes.push({x:G.x,y:G.y,ang:a,t:.16,range:T.range,arc:T.arc});
+      slashSpit(G.x,G.y,T.range,a,T.arc);
       for(const z of NB){
         if(z.dead)continue;
         const d=Math.sqrt(dist2(G.x,G.y,z.x,z.y));
@@ -1797,6 +1835,7 @@ function update(dt){
     if(z.dead)continue;
     if(z.flash>0)z.flash-=dt;
     if(z.dogCd>0)z.dogCd-=dt;
+    if(z.lidCd>0)z.lidCd-=dt;
     z.wob+=dt*6;
     const pdx=px-z.x,pdy=py-z.y,pd=Math.hypot(pdx,pdy)||1;
     let tX=px,tY=py;
@@ -1977,6 +2016,17 @@ function update(dt){
     p.x+=p.vx*dt;p.y+=p.vy*dt;p.t-=dt;
     if(p.t<=0){p.dead=true;if(G.pools.length<60)G.pools.push({x:p.x,y:p.y,r:34,t:5});}
   }
+  // jou koeëls skiet spoeg uit die lug as hulle paaie kruis (koeël boor deur)
+  if(G.eprojs.length&&G.projs.length){
+    for(const s of G.eprojs){
+      if(s.dead)continue;
+      for(const p of G.projs){
+        if(p.dead)continue;
+        const rr=(p.r||5)+9;
+        if(dist2(s.x,s.y,p.x,p.y)<rr*rr){s.dead=true;boomParts(s.x,s.y,4,'#7fb069');break;}
+      }
+    }
+  }
   for(const q of G.pools){q.t-=dt;if(q.t<=0)q.dead=true;}
   // Helvuur: brandende grond wat zombies skroei
   for(const f of G.fires){
@@ -2153,12 +2203,15 @@ function buildChoices(){
   if(G.weapons.length<MAX_W)
     for(const id in WEAPONS)if(!WEAPONS[id].super&&!G.weapons.find(w=>w.id===id))
       pool.push({kind:'w',id,nu:true,lvl:1}); // supers NET via SAAMSMELT/R4
-  if(Object.keys(G.passives).filter(id=>!PASSIVES[id].only).length<MAX_P) // kenmerk tel nie teen die gleuwe nie
+  { // kenmerk tel nie teen die gleuwe nie en word altyd aangebied
+    const oopGleuf=Object.keys(G.passives).filter(id=>!PASSIVES[id].only).length<MAX_P;
     for(const id in PASSIVES){
       if(id in G.passives)continue;
       if(PASSIVES[id].only&&PASSIVES[id].only!==G.char.id)continue;
+      if(!PASSIVES[id].only&&!oopGleuf)continue;
       pool.push({kind:'p',id,nu:true,lvl:1});
     }
+  }
   for(let i=pool.length-1;i>0;i--){const j=(R()*(i+1))|0;[pool[i],pool[j]]=[pool[j],pool[i]];}
   const out=pool.slice(0,3);
   // waarborg ten minste een wapen-kaart as een beskikbaar is
@@ -2830,6 +2883,18 @@ function render(){
     drawBrother(ctx,dc.x,dc.y,G.char,{s:1.15});
     ctx.globalAlpha=1;
   }
+  // potdeksel-deksels
+  const pdek=G.weapons.find(w=>w.id==='potdeksel');
+  if(pdek){
+    const T=WEAPONS.potdeksel.t[pdek.lvl-1], evo=pdek.evo;
+    const n=evo?4:T.count, rad=T.r+(evo?16:0);
+    for(let i=0;i<n;i++){
+      const a=(pdek.ang||0)+i/n*TAU, lx=G.x+Math.cos(a)*rad, ly=G.y+Math.sin(a)*rad;
+      ctx.fillStyle='#2f3237';ctx.beginPath();ctx.arc(lx,ly,13,0,TAU);ctx.fill();
+      ctx.strokeStyle=evo?'#e07830':'#55606f';ctx.lineWidth=2.5;ctx.stroke();
+      ctx.fillStyle=evo?'#e07830':'#8a8f98';ctx.beginPath();ctx.arc(lx,ly,4,0,TAU);ctx.fill();
+    }
+  }
   // speler
   drawBrother(ctx,G.x,G.y,G.char,{
     walk:G.moving?G.walk:0, moving:G.moving, face:G.face[0]<0?-1:1, s:1.15,
@@ -3434,9 +3499,17 @@ function renderPause(){
   }
   h+='</div>';
   h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px"><span style="font-size:17px;color:var(--dim);width:86px;flex:none">Passiewe</span>';
-  const pids=Object.keys(G.passives);
+  const pids=Object.keys(G.passives).filter(id=>!PASSIVES[id].only);
   for(let i=0;i<MAX_P;i++)h+=pids[i]?pChip(PASSIVES[pids[i]].name[0],pasCol,G.passives[pids[i]],PASSIVE_MAX):pChip('',leeg,0,0);
   h+='</div>';
+  const uniq=Object.keys(G.passives).find(id=>PASSIVES[id].only);
+  if(uniq){
+    const U=PASSIVES[uniq];
+    h+='<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px"><span style="font-size:17px;color:var(--dim);width:86px;flex:none">Kenmerk</span>'+
+      pChip(U.name[0],'#e07830',G.passives[uniq],PASSIVE_MAX)+
+      '<span style="font-size:18px;color:#e07830">'+esc(U.name)+'</span>'+
+      '<span style="font-size:15px;color:'+dim+'">— eie gleuf, tel nie saam nie</span></div>';
+  }
   const rows=[];
   for(const w of G.weapons){
     const W=WEAPONS[w.id];
