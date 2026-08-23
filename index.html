@@ -230,9 +230,9 @@ const CHARS=[
  {id:'altus',name:'Altus',title:'Die Sielkundige',weapon:'wysheidstaf', trait:'+30 LP, +1 pantser, begin met Wysheid',col:'#4a5670',
   look:{skin:'#dfa987',hair:'#5a4630',style:'short',beard:'#7a5a3c',cloak:true},
   mods:{hp:30,armor:1}, startPassives:{wysheid:1}},
- {id:'danie',name:'Danie',title:'Die Vinnige',weapon:'waterpyp', trait:'+12% spoed, +20% boog, begin met Veldskoene',col:'#2f3237',
+ {id:'danie',name:'Danie',title:'Die Vinnige',weapon:'waterpyp', trait:'+12% spoed, +20% boog, gelukskind (+10% kritiek)',col:'#2f3237',
   look:{skin:'#dfa987',hair:'#6a4a30',style:'spiky',beard:'#8a6a48',quiver:true},
-  mods:{spd:.12,xp:.15,bow:1.2}, startPassives:{veldskoene:1}},
+  mods:{spd:.12,xp:.15,bow:1.2,crit:.10}, startPassives:{veldskoene:1}},
  {id:'pa', name:'Pa', title:'Die Kaptein', weapon:'rewolwer', trait:'+25% gewere, +2 pantser, honde-fluisteraar', col:'#e8e6df',
   look:{skin:'#e2b18d',hair:'#d8d5cd',style:'short',epaulettes:true},
   mods:{hp:10,armor:2,cdm:.9,gun:1.25}},
@@ -302,6 +302,7 @@ const PASSIVES={
  magneet:{name:'Magneet',desc:'+25% optel-radius.'},
  kruithoring:{name:'Kruithoring',desc:'+8% plofradius per rang.'},
  slypsteen:{name:'Slypsteen',desc:'Lemme: +5% kans op dubbelskade.'},
+ geluk:{name:'Geluk',desc:'+4% kans op dubbelskade met enige wapen.'},
  wysheid:{name:'Wysheid',desc:'+10% XP per rang. Slim vang die plaas.'},
  selfdoen:{name:'Ek sal dit self doen',only:'pa',desc:'Net Pa. Woede vlam op: dubbel+ skade, bloei 1%/s. Elke rang: sterker, langer, gouer.'},
  poese:{name:'Poese!',only:'louw',desc:'Net Louw. Oorleef ’n doodshou en stamp als weg. Elke rang: meer LP terug, groter knal, gouer.'},
@@ -318,7 +319,7 @@ const EVOS={
  boerboel:{pass:'biltong',name:'Die Trop',desc:'Drie honde wat juwele gaan haal.'},
  wysheidstaf:{pass:'wysheid',name:'Deurbraak',desc:'Die golf keer zombies om — hulle veg vir jou.'},
 };
-const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=4, MAX_P=4;
+const PASSIVE_MAX=5, WEAPON_MAX=5, MAX_W=6, MAX_P=4;
 const SKILLS=[
  {id:'spiere',name:'Spiere',desc:'+4% skade per rang',max:5,cost:r=>25*Math.pow(2,r)},
  {id:'taai',name:'Taai Vel',desc:'+10 LP per rang',max:5,cost:r=>20*Math.pow(2,r)},
@@ -328,6 +329,7 @@ const SKILLS=[
  {id:'pantser',name:'Dik Vel',desc:'+1 pantser per rang',max:3,cost:r=>40*Math.pow(2,r)},
  {id:'flink',name:'Flink Hande',desc:'-4% herlaaityd per rang',max:5,cost:r=>30*Math.pow(2,r)},
  {id:'tweedekans',name:'Tweede Kans',desc:'Herleef een keer per lopie met halwe LP',max:1,cost:()=>400},
+ {id:'kalm',name:'Bly Maar Kalm',desc:'+0.5% LP-genees per sekonde per rang',max:4,cost:r=>40*Math.pow(2,r)},
  {id:'voorsprong',name:'Voorsprong',desc:'+1 gratis kaart-keuse aan die begin van elke lopie',max:2,cost:r=>60*Math.pow(2,r)},
  {id:'herrol',name:'Herrol',desc:'+1 herrol van vlak-op kaarte per lopie',max:3,cost:r=>50*Math.pow(2,r)},
 ];
@@ -560,7 +562,7 @@ function recalc(){
   const c=G.char.mods, sk=SAVE.skillsOff?{}:SAVE.skills, p=G.passives;
   const prevMax=G.maxhp;
   G.maxhp=100+(c.hp||0)+(sk.taai||0)*10+(p.biltong||0)*20;
-  G.regen=(p.biltong||0)*.6;
+  G.regen=(p.biltong||0)*.6 + G.maxhp*.005*(sk.kalm||0);
   G.speed=175*(1+(c.spd||0))*(1+(sk.vinnig||0)*.03)*(1+(p.veldskoene||0)*.08);
   G.dmgMul=(1+(c.dmg||0))*(1+(sk.spiere||0)*.04)*(1+(p.boerewors||0)*.1);
   G.gunMul=c.gun||1;
@@ -572,6 +574,7 @@ function recalc(){
   G.magnetR=95*(1+(p.magneet||0)*.25);
   G.areaMul=1+(p.kruithoring||0)*.08;
   G.critCh=(p.slypsteen||0)*.05;
+  G.luckCh=(c.crit||0)+(p.geluk||0)*.04; // Danie se geluk + Geluk-passief: enige wapen
   if(G.rageT>0)G.dmgMul*=(1.75+.25*(p.selfdoen||1)); // r1:×2 → r5:×3 skade
   if(G.enrageOn)G.dmgMul*=2; // woede oor die hoede
   if(G.janOn)G.dmgMul*=(G.char.id==='pa'||G.char.id==='louw')?.75:1.25; // Jan se effek
@@ -764,10 +767,12 @@ function tryEvolve(){
     }
   }
 }
-function bladeHit(z,dmg,kx,ky){
-  if(G.critCh>0&&R()<G.critCh)hurtZombie(z,dmg*2,kx,ky,true);
+function wHit(z,dmg,kx,ky,blade){
+  const ch=(G.luckCh||0)+(blade?G.critCh:0); // geluk geld vir enige wapen; slypsteen net vir lemme
+  if(ch>0&&R()<ch)hurtZombie(z,dmg*2,kx,ky,true);
   else hurtZombie(z,dmg,kx,ky);
 }
+function bladeHit(z,dmg,kx,ky){wHit(z,dmg,kx,ky,true);}
 
 /* ============================== WEAPONS FIRE ============================== */
 function nearestZ(x,y,maxD,skip){
@@ -803,7 +808,7 @@ function fireWeapon(w,dt){
           if(ik>0&&z.type!=='boss'&&R()<ik){
             if(G.dnums.length<90)G.dnums.push({x:z.x,y:z.y-z.r-10,v:'WOEF!',t:.9,crit:true});
             hurtZombie(z,z.hp+9999,(z.x-d.x)*.06,(z.y-d.y)*.06);
-          }else hurtZombie(z,ddmg,(z.x-d.x)*.06,(z.y-d.y)*.06);
+          }else wHit(z,ddmg,(z.x-d.x)*.06,(z.y-d.y)*.06,false);
           z.dogCd=.4;
         }
       }
@@ -824,7 +829,7 @@ function fireWeapon(w,dt){
       for(const z of NB){
         if(z.dead)continue;
         if(dist2(G.x,G.y,z.x,z.y)<(rad+z.r)*(rad+z.r)){
-          hurtZombie(z,(T.dmg+(w.evo?2:0))*G.dmgMul,(z.x-G.x)*.02,(z.y-G.y)*.02);
+          wHit(z,(T.dmg+(w.evo?2:0))*G.dmgMul,(z.x-G.x)*.02,(z.y-G.y)*.02,false);
           if(w.evo)z.slowT=.55;
         }
       }
@@ -892,7 +897,7 @@ function fireWeapon(w,dt){
         const d2=dist2(G.x,G.y,z.x,z.y);
         if(d2<(sr+z.r)*(sr+z.r)){
           const d=Math.sqrt(d2)||1;
-          hurtZombie(z,T.dmg*.5*G.dmgMul,(z.x-G.x)/d*T.kb*.6,(z.y-G.y)/d*T.kb*.6);
+          wHit(z,T.dmg*.5*G.dmgMul,(z.x-G.x)/d*T.kb*.6,(z.y-G.y)/d*T.kb*.6,false);
         }
       }
       G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.35,r1:sr});
@@ -915,7 +920,7 @@ function fireWeapon(w,dt){
       while(za>Math.PI)za-=TAU;while(za<-Math.PI)za+=TAU;
       if(Math.abs(za)<T.arc/2){
         hit=true;
-        hurtZombie(z,T.dmg*G.dmgMul,(z.x-G.x)/Math.max(1,d)*T.kb,(z.y-G.y)/Math.max(1,d)*T.kb);
+        wHit(z,T.dmg*G.dmgMul,(z.x-G.x)/Math.max(1,d)*T.kb,(z.y-G.y)/Math.max(1,d)*T.kb,false);
         if(T.stun&&!z.dead&&z.type!=='boss'&&R()<T.stun)z.stun=1;
       }
     }
@@ -928,7 +933,7 @@ function fireWeapon(w,dt){
     for(const z of NB){
       if(z.dead)continue;
       if(dist2(G.x,G.y,z.x,z.y)<(rad+z.r)*(rad+z.r)){
-        hurtZombie(z,T.dmg*G.dmgMul,0,0);
+        wHit(z,T.dmg*G.dmgMul,0,0,false);
         if(z.type!=='boss')z.confT=Math.max(z.confT||0,T.conf*(1+.08*(G.passives.volgendeweek||0)));
       }
     }
@@ -1223,11 +1228,19 @@ function update(dt){
   G.eventT-=dt;
   if(!G.event&&G.eventT<=0){
     G.eventT=rand(95,135);
+    const opts=['hek','lettie'];
     const kragOk=nightAlpha()>.3&&G.power&&dist2(G.x,G.y,1470,1425)>250*250;
-    if(kragOk&&R()<.5){
+    if(kragOk)opts.push('krag');
+    const kind=pick(opts);
+    if(kind==='krag'){
       G.power=false;
       G.event={type:'krag',x:1470,y:1425,t:45,age:0};
       banner('KRAG IS AF!');SND.alarm();
+    }else if(kind==='lettie'){
+      const a=R()*TAU,d=540;
+      const lx=clamp(G.x+Math.cos(a)*d,60,WORLD_W-60),ly=clamp(G.y+Math.sin(a)*d,60,WORLD_H-60);
+      G.event={type:'lettie',x:lx,y:ly,t:18,age:0};
+      banner('LAAI GOU VIR LETTIE AF!');SND.alarm();
     }else{
       const s=pick([[1880,1855],[1035,1560],[1460,1235]]);
       G.event={type:'hek',x:s[0],y:s[1],t:26,sp:0,age:0};
@@ -1238,10 +1251,16 @@ function update(dt){
     const ev=G.event;
     ev.age+=dt;
     if(dist2(G.x,G.y,ev.x,ev.y)<55*55){
-      banner(ev.type==='krag'?'KRAG AAN!':'HEK TOE!');
-      if(ev.type==='krag')G.power=true;
-      SND.lvl();
-      if(ev.age>3){G.munte+=12*G.munteMul;boomParts(ev.x,ev.y,14,'#e0b64f');}
+      if(ev.type==='lettie'){
+        banner('LETTIE IS VEILIG!');SND.coin();
+        G.munte+=20*G.munteMul;G.hp=Math.min(G.maxhp,G.hp+30);
+        boomParts(ev.x,ev.y,16,'#e58fd0');
+      }else{
+        banner(ev.type==='krag'?'KRAG AAN!':'HEK TOE!');
+        if(ev.type==='krag')G.power=true;
+        SND.lvl();
+        if(ev.age>3){G.munte+=12*G.munteMul;boomParts(ev.x,ev.y,14,'#e0b64f');}
+      }
       G.event=null;G.eventT=Math.max(G.eventT,rand(30,50));
     }else{
       ev.t-=dt;
@@ -1486,7 +1505,7 @@ function update(dt){
         for(const z of NB){
           if(z.dead)continue;
           if(dist2(p.tx,p.ty,z.x,z.y)<(p.aoe+z.r)*(p.aoe+z.r))
-            hurtZombie(z,p.dmg,(z.x-p.tx)*.08,(z.y-p.ty)*.08);
+            wHit(z,p.dmg,(z.x-p.tx)*.08,(z.y-p.ty)*.08,false);
         }
       }
       continue;
@@ -1514,7 +1533,7 @@ function update(dt){
       if(dist2(p.x,p.y,z.x,z.y)<(p.r+z.r)*(p.r+z.r)){
         p.hit.add(z);
         if(p.k==='vurk'||p.k==='lem')bladeHit(z,p.dmg,p.vx*dt*2,p.vy*dt*2);
-        else hurtZombie(z,p.dmg,p.vx*dt*2,p.vy*dt*2);
+        else wHit(z,p.dmg,p.vx*dt*2,p.vy*dt*2,false); // gewere/boog/vlam: geluk-kritiek
         if(p.vleis&&z.dead&&G.drops.length<90)G.drops.push({x:z.x,y:z.y,k:'vleis',v:2});
         if(p.k==='pellet'){
           if(p.ric>0){ // Spykergeweer: spring aan
@@ -1629,6 +1648,11 @@ function buildChoices(){
     }
   for(let i=pool.length-1;i>0;i--){const j=(R()*(i+1))|0;[pool[i],pool[j]]=[pool[j],pool[i]];}
   const out=pool.slice(0,3);
+  // waarborg ten minste een wapen-kaart as een beskikbaar is
+  if(!out.some(c=>c.kind==='w')){
+    const w=pool.find(c=>c.kind==='w');
+    if(w)out[out.length-1]=w;
+  }
   while(out.length<3)out.push(out.length===1?{kind:'heal'}:{kind:'munt'});
   if(!out.length)out.push({kind:'heal'},{kind:'munt'},{kind:'heal'});
   return out;
@@ -2145,7 +2169,7 @@ function render(){
   }
   if(G.event){
     const pu=(.5+Math.sin(performance.now()/160)*.35).toFixed(2);
-    ctx.strokeStyle=G.event.type==='krag'?'rgba(255,80,50,'+pu+')':'rgba(224,182,79,'+pu+')';
+    ctx.strokeStyle=G.event.type==='krag'?'rgba(255,80,50,'+pu+')':G.event.type==='lettie'?'rgba(229,143,208,'+pu+')':'rgba(224,182,79,'+pu+')';
     ctx.lineWidth=4;
     ctx.beginPath();ctx.arc(G.event.x,G.event.y,34+Math.sin(performance.now()/160)*6,0,TAU);ctx.stroke();
   }
@@ -2430,12 +2454,12 @@ function drawHUD(){
       const ax=VW/2+vx*k,ay=VH/2+vy*k,ang=Math.atan2(vy,vx);
       ctx.save();ctx.translate(ax,ay);ctx.rotate(ang);
       ctx.globalAlpha=.6+Math.sin(performance.now()/160)*.3;
-      ctx.fillStyle=G.event.type==='krag'?'#ff5030':'#e0b64f';
+      ctx.fillStyle=G.event.type==='krag'?'#ff5030':G.event.type==='lettie'?'#e58fd0':'#e0b64f';
       ctx.beginPath();ctx.moveTo(14,0);ctx.lineTo(-8,-9);ctx.lineTo(-8,9);ctx.closePath();ctx.fill();
       ctx.restore();ctx.globalAlpha=1;
       ctx.textAlign='center';ctx.font='15px VT323, monospace';
       ctx.fillStyle='#ece5cc';
-      ctx.fillText(G.event.type==='krag'?'KRAG':'HEK',ax,ay+24);
+      ctx.fillText(G.event.type==='krag'?'KRAG':G.event.type==='lettie'?'LETTIE':'HEK',ax,ay+24);
     }
   }
   // banier
