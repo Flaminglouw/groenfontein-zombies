@@ -2402,19 +2402,19 @@ function refreshMenu(){
   document.getElementById('bToggleSkills').textContent='Vaardighede: '+(SAVE.skillsOff?'AF':'AAN');
 }
 /* ============================== TELBORD ============================== */
-const LB_URL=''; // Firebase RTDB basis-URL (bv. https://xxx-default-rtdb.firebaseio.com) — maak die bord oral gedeel
+const SB_URL='https://zltdgmxlymlytlnkxjuy.supabase.co';
+const SB_KEY='sb_publishable_Wdi09zwmq7SXSELWp5SASA_ehWbqn-P';
+const SB_H={apikey:SB_KEY,'Authorization':'Bearer '+SB_KEY};
 let LB={scores:[]}, lbShared=false, lbWritable=null;
 const CHAR_LETTER={louw:'L',altus:'A',danie:'D',pa:'P'};
 async function lbInit(){
-  if(LB_URL){
-    try{
-      const r=await fetch(LB_URL+'/leaderboard.json',{cache:'no-store'});
-      if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores)){LB=j;}lbShared=true;lbWritable=true;}
-    }catch(e){}
-  }
-  if(!lbShared)try{
-    const r=await fetch('data/leaderboard.json',{cache:'no-store'});
-    if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores)){LB=j;lbShared=true;}}
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/scores?select=naam,karakter,telling,tyd,dooies,puur&order=telling.desc&limit=25',{headers:SB_H});
+    if(r.ok){
+      const rows=await r.json();
+      LB.scores=rows.map(x=>({n:x.naam,c:x.karakter,s:x.telling,t:x.tyd,k:x.dooies,p:x.puur?1:0}));
+      lbShared=true;lbWritable=true;
+    }
   }catch(e){}
   try{
     const p=JSON.parse(localStorage.getItem('dbgz_pending')||'null');
@@ -2430,44 +2430,25 @@ function lbLocalAdd(e){
 }
 async function lbSubmit(e,fromPending){
   if(!fromPending)lbLocalAdd(e);
-  const key=x=>x.n+'|'+x.s+'|'+x.d;
-  if(LB_URL){ // Firebase-pad: werk van enige weergawe af
-    try{localStorage.setItem('dbgz_pending',JSON.stringify(e));}catch(_){}
-    try{
-      const r=await fetch(LB_URL+'/leaderboard.json',{cache:'no-store'});
-      if(r.ok){const j=await r.json();if(j&&Array.isArray(j.scores))LB=j;}
-      if(!LB.scores.some(x=>key(x)===key(e)))LB.scores.push(e);
-      LB.scores.sort((a,b)=>b.s-a.s);LB.scores=LB.scores.slice(0,25);
-      const w=await fetch(LB_URL+'/leaderboard.json',{method:'PUT',body:JSON.stringify(LB)});
-      if(w.ok){lbShared=true;lbWritable=true;localStorage.removeItem('dbgz_pending');}
-    }catch(err){}
-    return;
-  }
-  if(!(window.claude&&claude.use))return;
   try{localStorage.setItem('dbgz_pending',JSON.stringify(e));}catch(_){}
   try{
-    const art=await claude.use('artifact');
-    if(!art){localStorage.removeItem('dbgz_pending');return;}
-    if(!LB.scores.some(x=>key(x)===key(e)))LB.scores.push(e);
-    LB.scores.sort((a,b)=>b.s-a.s);
-    LB.scores=LB.scores.slice(0,25);
-    await art.publish({'data/leaderboard.json':JSON.stringify(LB)});
-    lbShared=true;lbWritable=true;
-    localStorage.removeItem('dbgz_pending');
-  }catch(err){
-    const code=err&&err.code;
-    if(code==='not_writer'||code==='not_granted'||code==='capability_disabled'||code==='not_declared'||code==='capability_removed'){
-      lbWritable=false;
-      try{localStorage.removeItem('dbgz_pending');}catch(_){}
+    const r=await fetch(SB_URL+'/rest/v1/scores',{method:'POST',
+      headers:Object.assign({'Content-Type':'application/json','Prefer':'return=minimal'},SB_H),
+      body:JSON.stringify({naam:e.n,karakter:e.c,telling:e.s,tyd:e.t,dooies:e.k,puur:!!e.p})});
+    if(r.ok){
+      localStorage.removeItem('dbgz_pending');
+      lbShared=true;lbWritable=true;
+      LB.scores.push(e);
+      LB.scores.sort((a,b)=>b.s-a.s);
+      LB.scores=LB.scores.slice(0,25);
     }
-    // conflict: pending bly; die herlaai bring die nuutste bord en ons probeer weer
-  }
+  }catch(err){} // vanlyn: telling wag in die tou en probeer weer met die volgende laai
 }
 function renderBoard(){
   document.getElementById('plName').value=SAVE.name||'';
   document.getElementById('lbStatus').textContent=
-    lbShared?(lbWritable===false?'Gedeelde bord: net lees op hierdie toestel.':'Gedeelde familie-bord — telling word outomaties gepos.')
-    :'Plaaslike bord (gedeelde bord werk op die claude.ai-blad).';
+    lbShared?'Gedeelde familie-bord — lewendig vir almal, oral.'
+    :'Bord is tans vanlyn — tellings wag en pos outomaties later.';
   const box=document.getElementById('lbList');box.innerHTML='';
   const row=(medal,e)=>{
     const d=document.createElement('div');d.className='skill-row';
