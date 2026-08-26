@@ -67,13 +67,28 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
     (die wit boog pols wanneer hy gereed is). 'n Son se ringe wys hoeveel keer hy nog kan groei.
     Verower elke ander kleur om te wen.</p>
   <button class="btn" id="bResume" style="display:none">Terug na die spel</button>
+  <button class="btn ghost" id="bTelbord">Telbord</button>
   <div class="maps" id="mapGrid"></div>
   <a class="btn ghost" href="index.html" style="margin-top:18px">&larr; Terug na die plaas</a>
+</div></div>
+
+<div class="screen" id="scrBoard"><div class="panel" style="max-width:640px">
+  <h1 style="font-size:clamp(13px,2.6vw,20px)">TELBORD</h1>
+  <div class="sub">ONTSPAN — VINNIGSTE TYE</div>
+  <div id="tydLys" style="text-align:left;margin-top:16px;font-size:18px;line-height:1.5"></div>
+  <button class="btn ghost" id="bBoardTerug" style="margin-top:16px">Terug</button>
 </div></div>
 
 <div class="screen" id="scrEnd"><div class="panel" style="max-width:480px">
   <h1 id="endTitle">WEN!</h1>
   <p class="hint" id="endSub"></p>
+  <div id="endTyd" style="font-size:24px;color:var(--gold);margin:8px 0 2px"></div>
+  <div id="endBest" style="font-size:17px;color:var(--dim)"></div>
+  <div id="endNaamRy" style="display:none;margin:10px 0">
+    <input id="ontNaam" maxlength="14" placeholder="Jou naam"
+      style="background:#222c19;border:2px solid var(--gold);color:var(--ink);font-family:inherit;font-size:22px;padding:5px 10px;width:200px;text-align:center">
+    <button class="btn ghost" id="bStoorTyd">Stoor Tyd</button>
+  </div>
   <button class="btn" id="bAgain">Speel Weer</button>
   <button class="btn ghost" id="bToMaps">Kies 'n Ander Kaart</button>
 </div></div>
@@ -416,6 +431,56 @@ function sndEnd(won){
 }
 document.addEventListener('pointerdown',()=>{ initAudio(); if(AC&&AC.state==='suspended') AC.resume(); },{capture:true});
 
+// ---------- familie-tydrenbord (Supabase, selfde projek as die hoofspel) ----------
+const SB_URL='https://zltdgmxlymlytlnkxjuy.supabase.co';
+const SB_KEY='sb_publishable_Wdi09zwmq7SXSELWp5SASA_ehWbqn-P';
+const SB_H={apikey:SB_KEY,'Authorization':'Bearer '+SB_KEY};
+let BEST=null,BESTALL=null,gameT=0;
+function fmtT(s){const m=Math.floor(s/60),ss=Math.floor(s%60);return m+':'+String(ss).padStart(2,'0');}
+function playerName(){
+  try{const n=localStorage.getItem('ontspan_naam'); if(n) return n;}catch(_){}
+  try{const sv=JSON.parse(localStorage.getItem('dbgz_v1')||'{}'); if(sv.name) return String(sv.name).slice(0,14);}catch(_){}
+  return null;
+}
+// window.ontspanSubmit is die skryf-pad — bot-toetse MOET dit stub (soos lbSubmit in die hoofspel)
+window.ontspanSubmit=function(row){
+  let q=[]; try{q=JSON.parse(localStorage.getItem('ontspan_pending')||'[]');}catch(_){}
+  q.push(row); q=q.slice(-20);
+  try{localStorage.setItem('ontspan_pending',JSON.stringify(q));}catch(_){}
+  flushTimes();
+};
+async function flushTimes(){
+  let q=[]; try{q=JSON.parse(localStorage.getItem('ontspan_pending')||'[]');}catch(_){ return; }
+  if(!q.length) return;
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/ontspan_tye',{method:'POST',
+      headers:Object.assign({'Content-Type':'application/json','Prefer':'return=minimal'},SB_H),
+      body:JSON.stringify(q)});
+    if(r.ok){ localStorage.removeItem('ontspan_pending'); fetchBest(); }
+  }catch(_){} // vanlyn: die tye wag in die tou en pos met die volgende laai
+}
+async function fetchBest(){
+  try{
+    const r=await fetch(SB_URL+'/rest/v1/ontspan_tye?select=naam,kaart,sekondes&order=sekondes.asc&limit=400',{headers:SB_H});
+    if(!r.ok) return;
+    const rows=await r.json();
+    BEST={}; BESTALL={};
+    for(const row of rows){
+      if(!BEST[row.kaart]) BEST[row.kaart]=row; // gesorteer: eerste per kaart = beste
+      (BESTALL[row.kaart]=BESTALL[row.kaart]||[]).push(row);
+    }
+    updateGridBest();
+    if(screenState==='board') renderTelbord();
+  }catch(_){}
+}
+function updateGridBest(){
+  if(!BEST) return;
+  document.querySelectorAll('.mbest').forEach(el=>{
+    const b=BEST[+el.dataset.k];
+    el.textContent=b?('★ '+fmtT(b.sekondes)+' — '+b.naam):'';
+  });
+}
+
 let nodes=[],fleets=[],packs=[],FX=[],botIds=[],aiTimers={},curMap=-1,demoOn=false,ended=false,sel=[];
 let dragging=false,dragPid=null,lasso=[],upTimer=null,T=0;
 let screenState='maps',endTimer=null;
@@ -438,7 +503,7 @@ function syncDots(n){
 function bandOf(n){return n.isPack? 8+n.dots.length*0.2 : 14+n.dots.length*0.35;} // packs cluster tight on their point
 
 function initMap(idx){
-  curMap=idx; ended=false; sel=[]; fleets=[]; packs=[]; FX=[]; cancelDrag();
+  curMap=idx; ended=false; sel=[]; fleets=[]; packs=[]; FX=[]; gameT=0; cancelDrag();
   if(upTimer){ clearTimeout(upTimer); upTimer=null; }
   const m=MAPS[idx];
   nodes=m.nodes.map((n,i)=>{
@@ -463,7 +528,25 @@ function show(which){
   screenState=which;
   document.getElementById('scrMaps').classList.toggle('on',which==='maps');
   document.getElementById('scrEnd').classList.toggle('on',which==='end');
+  document.getElementById('scrBoard').classList.toggle('on',which==='board');
   document.getElementById('topbar').style.display=which==='game'?'flex':'none';
+}
+function renderTelbord(){
+  const el=document.getElementById('tydLys');
+  if(!BESTALL||!Object.keys(BESTALL).length){
+    el.innerHTML="<p style='color:var(--dim)'>Nog geen tye aangeteken nie — wen ’n kaart!</p>";
+    return;
+  }
+  let h='';
+  MAPS.forEach((m,i)=>{
+    if(m.hidden) return;
+    const rows=(BESTALL[i+1]||[]).slice(0,3);
+    h+=`<div style="margin-bottom:12px"><b style="color:var(--gold)">${i+1}. ${m.name}</b>`;
+    if(!rows.length) h+=` <span style="color:#6d7358">— nog niemand</span>`;
+    h+=rows.map((r,k)=>`<br><span style="color:${k===0?'var(--ink)':'var(--dim)'}">&nbsp;&nbsp;${k+1}. ${fmtT(r.sekondes)} — ${String(r.naam).replace(/[<>&]/g,'')}</span>`).join('');
+    h+='</div>';
+  });
+  el.innerHTML=h;
 }
 
 function buildMapGrid(){
@@ -472,7 +555,8 @@ function buildMapGrid(){
     if(m.hidden) return; // toets-sandput: bereikbaar via #toets in die URL
     const c=document.createElement('div'); c.className='mapcard'; c.tabIndex=0;
     c.setAttribute('role','button');
-    c.innerHTML=`<h3>${i+1}. ${m.name}</h3><p>${m.bots.length} bot${m.bots.length>1?'s':''} · ${m.nodes.length} planete</p>`;
+    c.innerHTML=`<h3>${i+1}. ${m.name}</h3><p>${m.bots.length} bot${m.bots.length>1?'s':''} · ${m.nodes.length} planete</p>`+
+      `<p class="mbest" data-k="${i+1}" style="font-size:13px;color:var(--gold);margin-top:4px"></p>`;
     c.onclick=()=>initMap(i);
     c.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); initMap(i); } };
     g.appendChild(c);
@@ -480,6 +564,7 @@ function buildMapGrid(){
 }
 buildMapGrid();
 if(location.hash==='#toets'){ const ti=MAPS.findIndex(m=>m.hidden); if(ti>=0) initMap(ti); }
+flushTimes(); fetchBest();
 
 function spawnFleet(src,dst,units,owner){
   const dist=Math.hypot(dst.x-src.x,dst.y-src.y);
@@ -593,6 +678,7 @@ function checkEnd(){
   else if(!alive(PLAYER)) endGame(false);
   else if(factions.length===1) endGame(true);
 }
+let pendingRow=null;
 function endGame(won){
   ended=true;
   sndEnd(won);
@@ -601,8 +687,28 @@ function endGame(won){
   document.getElementById('endSub').textContent=won?
     'Elke ander kleur is verower. Goed gedoen.':
     'Al jou planete is oorgeneem. Probeer weer.';
+  const tydEl=document.getElementById('endTyd'), bestEl=document.getElementById('endBest');
+  const naamRy=document.getElementById('endNaamRy');
+  tydEl.textContent=''; bestEl.textContent=''; naamRy.style.display='none'; pendingRow=null;
+  if(won&&!demoOn&&!MAPS[curMap].sandbox){
+    const secs=Math.round(gameT*10)/10;
+    tydEl.textContent='Jou tyd: '+fmtT(secs);
+    const b=BEST&&BEST[curMap+1];
+    if(b) bestEl.textContent=(secs<b.sekondes?'NUWE FAMILIE-REKORD! (was ':'Familie-beste: ')+fmtT(b.sekondes)+' — '+b.naam+(secs<b.sekondes?')':'');
+    const naam=playerName();
+    if(naam){ window.ontspanSubmit({naam,kaart:curMap+1,sekondes:secs}); }
+    else { pendingRow={kaart:curMap+1,sekondes:secs}; naamRy.style.display=''; }
+  }
   endTimer=setTimeout(()=>{ endTimer=null; show('end'); },900);
 }
+document.getElementById('bStoorTyd').onclick=()=>{
+  const v=document.getElementById('ontNaam').value.trim().slice(0,14);
+  if(!v||!pendingRow) return;
+  try{localStorage.setItem('ontspan_naam',v);}catch(_){}
+  window.ontspanSubmit(Object.assign({naam:v},pendingRow));
+  pendingRow=null;
+  document.getElementById('endNaamRy').style.display='none';
+};
 
 let last=performance.now();
 function loop(now){
@@ -620,6 +726,7 @@ function loop(now){
 requestAnimationFrame(loop);
 
 function update(dt){
+  gameT+=dt;
   for(const n of nodes){
     if(n.owner!=='neutral'){
       // no cap: swarms grow without limit; production scales with level
@@ -677,7 +784,7 @@ function render(){
   ctx.save();
   ctx.translate(offX,offY); ctx.scale(scale,scale);
   ctx.beginPath(); ctx.rect(0,0,VW,VH); ctx.clip();
-  if(screenState==='maps'||!nodes.length){ ctx.drawImage(BG,0,0,VW,VH); ctx.restore(); return; }
+  if(screenState==='maps'||screenState==='board'||!nodes.length){ ctx.drawImage(BG,0,0,VW,VH); ctx.restore(); return; }
   // in-game field is pure black, Auralux-style; the starfield stays on the menu backdrop
 
   // additive pass: glows, swarms, streams, effect flashes
@@ -967,6 +1074,8 @@ document.getElementById('bMus').onclick=()=>{
 document.getElementById('bAgain').onclick=()=>{ initMap(curMap); };
 document.getElementById('bToMaps').onclick=openMaps;
 document.getElementById('bResume').onclick=()=>{ show('game'); };
+document.getElementById('bTelbord').onclick=()=>{ show('board'); renderTelbord(); fetchBest(); };
+document.getElementById('bBoardTerug').onclick=openMaps;
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){ sel=[]; cancelDrag(); }
   if((e.key==='a'||e.key==='A')&&!demoOn&&!ended&&screenState==='game'){
