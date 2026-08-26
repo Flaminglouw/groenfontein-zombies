@@ -48,6 +48,7 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   <button id="bMapList">Kaarte</button>
   <button id="bReset">Herbegin</button>
   <button id="bGetalle">Getalle: AF</button>
+  <button id="bMus">Musiek: AAN</button>
   <label><input type="checkbox" id="cDemo"> Demo (bots speel alleen)</label>
   <span class="spacer"></span>
   <span id="mapName"></span>
@@ -61,8 +62,10 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
     Die volgende klik is die bevel: 'n vyand se son = val aan, jou eie son = versterk, of
     <b>oop ruimte = parkeer die swerm daar</b> — hy wag as 'n vry wolk wat jy later weer kan kies
     en stuur. <b>Trek 'n kring</b> om sonne/wolke om 'n groep te kies. Elke bevel stuur ALLES.
-    <b>VERBETER:</b> pomp 100 ekstra eenhede bo die maksimum in 'n eie son in (kyk die wit boog
-    vul) en hy vlak op — groter, vinniger, tot vlak 3. Verower elke ander kleur om te wen.</p>
+    <b>VERBETER:</b> eenhede stapel onbeperk op. Klik jou gekose son NOG 'n keer om 100 eenhede
+    in sy volgende GRYS RING te belê — een ring per klik, en die res bly agter as verdedigers
+    (die wit boog pols wanneer hy gereed is). 'n Son se ringe wys hoeveel keer hy nog kan groei.
+    Verower elke ander kleur om te wen.</p>
   <button class="btn" id="bResume" style="display:none">Terug na die spel</button>
   <div class="maps" id="mapGrid"></div>
   <a class="btn ghost" href="index.html" style="margin-top:18px">&larr; Terug na die plaas</a>
@@ -97,6 +100,11 @@ const OWNER_COLOR={player:'#6fe08a',bot1:'#ff6a4d',bot2:'#5db8ff',bot3:'#c07bff'
 // ---------- sprites (pre-rendered radial gradients; drawn additively) ----------
 function hexRGB(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
 function rgba(h,a){const c=hexRGB(h);return `rgba(${c[0]},${c[1]},${c[2]},${a})`;}
+function mix(h1,h2,t){
+  const a=hexRGB(h1),b=hexRGB(h2);
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
+}
+function shade(h,f){const c=hexRGB(h);return `rgb(${Math.round(c[0]*f)},${Math.round(c[1]*f)},${Math.round(c[2]*f)})`;}
 function makeSprite(sz,stops){
   const c=document.createElement('canvas'); c.width=c.height=sz;
   const g=c.getContext('2d');
@@ -105,14 +113,49 @@ function makeSprite(sz,stops){
   g.fillStyle=gr; g.fillRect(0,0,sz,sz);
   return c;
 }
+// procedurally textured sun body: bright granulated surface with limb darkening,
+// baked once per faction and drawn rotating slowly — the "living fireball" look
+function makeSun(col,dim){
+  const S=256, c=document.createElement('canvas'); c.width=c.height=S;
+  const g=c.getContext('2d'); const R=S/2, BR=R*0.92;
+  let gr=g.createRadialGradient(R,R,0,R,R,BR);
+  if(dim){
+    gr.addColorStop(0,mix(col,'#ffffff',.45));
+    gr.addColorStop(.5,col);
+    gr.addColorStop(1,shade(col,.4));
+  } else {
+    gr.addColorStop(0,'#ffffff');
+    gr.addColorStop(.28,mix(col,'#ffffff',.6));
+    gr.addColorStop(.62,col);
+    gr.addColorStop(1,shade(col,.5));
+  }
+  g.fillStyle=gr; g.beginPath(); g.arc(R,R,BR,0,7); g.fill();
+  g.save(); g.beginPath(); g.arc(R,R,BR,0,7); g.clip();
+  for(let i=0;i<110;i++){
+    const a=Math.random()*7, d=Math.sqrt(Math.random())*BR*0.96;
+    const x=R+Math.cos(a)*d, y=R+Math.sin(a)*d, rr=5+Math.random()*20;
+    const bg=g.createRadialGradient(x,y,0,x,y,rr);
+    if(Math.random()<.45){ bg.addColorStop(0,`rgba(255,255,255,${dim?.08:.18})`); }
+    else { bg.addColorStop(0,'rgba(0,0,0,.32)'); }
+    bg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=bg; g.fillRect(x-rr,y-rr,rr*2,rr*2);
+  }
+  g.restore();
+  gr=g.createRadialGradient(R,R,BR*0.6,R,R,BR);
+  gr.addColorStop(0,'rgba(0,0,0,0)'); gr.addColorStop(1,'rgba(0,0,0,.45)');
+  g.fillStyle=gr; g.beginPath(); g.arc(R,R,BR,0,7); g.fill();
+  return c;
+}
+// more saturated variants for the sun surface itself (the pastel UI colors wash out on a big disc)
+const BODY_COLOR={player:'#35d957',bot1:'#ff4a26',bot2:'#2f95ff',bot3:'#a943ff',neutral:'#8a917f'};
 const SPR={};
 for(const own in OWNER_COLOR){
   const col=OWNER_COLOR[own];
   const dim=own==='neutral';
   SPR[own]={
-    glow: makeSprite(128,[[0,rgba(col,dim?.3:.5)],[.4,rgba(col,dim?.08:.15)],[1,rgba(col,0)]]),
-    core: makeSprite(128,[[0,`rgba(255,255,255,${dim?.7:.95})`],[.15,rgba(col,.95)],[.45,rgba(col,.35)],[1,rgba(col,0)]]),
-    dot:  makeSprite(32,[[0,`rgba(255,255,255,${dim?.5:.95})`],[.18,rgba(col,dim?.55:.95)],[.55,rgba(col,dim?.2:.35)],[1,rgba(col,0)]]),
+    glow: makeSprite(128,[[0,rgba(col,dim?.3:.55)],[.4,rgba(col,dim?.08:.18)],[1,rgba(col,0)]]),
+    body: makeSun(BODY_COLOR[own],dim),
+    dot:  makeSprite(32,[[0,'rgba(255,255,255,.95)'],[.12,rgba(col,dim?.6:.95)],[.4,rgba(col,dim?.18:.3)],[1,rgba(col,0)]]),
   };
 }
 const WGLOW=makeSprite(128,[[0,'rgba(255,255,255,.95)'],[.3,'rgba(255,255,255,.45)'],[1,'rgba(255,255,255,0)']]);
@@ -288,25 +331,102 @@ const MAPS=[
   {x:300,y:150,cap:25,owner:'neutral',start:10},
   {x:700,y:150,cap:25,owner:'neutral',start:10},
 ]},
-{name:'Toets A-E',sandbox:true,bots:[],aiInterval:9,aiMargin:1.2,nodes:[
-  {x:110,y:300,cap:30,owner:'player',start:20,name:'A'},
-  {x:300,y:300,cap:50,owner:'player',start:35,name:'B'},
-  {x:500,y:300,cap:80,owner:'player',start:60,name:'C'},
-  {x:700,y:300,cap:120,owner:'player',start:90,name:'D'},
-  {x:890,y:300,cap:170,owner:'player',start:130,name:'E'},
+{name:'Toets A-E',sandbox:true,hidden:true,bots:[],aiInterval:9,aiMargin:1.2,nodes:[
+  {x:130,y:300,cap:40,owner:'player',start:500,name:'A',noUp:true},
+  {x:420,y:150,cap:40,owner:'neutral',start:0,name:'B',maxLvl:2},
+  {x:420,y:450,cap:40,owner:'neutral',start:0,name:'C',maxLvl:3},
+  {x:720,y:150,cap:40,owner:'neutral',start:0,name:'D',maxLvl:4},
+  {x:720,y:450,cap:40,owner:'neutral',start:0,name:'E',maxLvl:5},
 ]},
 ];
 
+// ---------- generative ambient music ----------
+// Auralux-styl: die spel pols op ambient musiek en spelaksies smelt in die melodie in.
+// Tegniek: Eno 'Music for Airports'-fase-lusse — een noot per stem, elk op sy eie
+// ongelyke lus-tyd (~17-33s), sodat toevallige akkoorde vorm; alles pentatonies.
+let AC=null,MG=null,verbIn=null,musOn=true,lastPluck=0;
+const MUS_NOTES=[53,55,57,60,62,65,69]; // F3 G3 A3 C4 D4 F4 A4 — geen halftoon-botsings
+function nHz(m){return 440*Math.pow(2,(m-69)/12);}
+function initAudio(){
+  if(AC) return;
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(_){ return; }
+  MG=AC.createGain(); MG.gain.value=musOn?0.9:0;
+  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600;
+  // goedkoop galm: twee kruis-gevoerde delays met terugvoer
+  verbIn=AC.createGain(); verbIn.gain.value=0.9;
+  const d1=AC.createDelay(1), d2=AC.createDelay(1);
+  d1.delayTime.value=0.211; d2.delayTime.value=0.337;
+  const f1=AC.createGain(), f2=AC.createGain(); f1.gain.value=0.42; f2.gain.value=0.42;
+  const dl=AC.createBiquadFilter(); dl.type='lowpass'; dl.frequency.value=1600;
+  verbIn.connect(d1); verbIn.connect(d2);
+  d1.connect(f1); f1.connect(d2); d2.connect(f2); f2.connect(dl); dl.connect(d1);
+  const wet=AC.createGain(); wet.gain.value=0.5;
+  d1.connect(wet); d2.connect(wet);
+  wet.connect(MG); verbIn.connect(MG);
+  MG.connect(lp); lp.connect(AC.destination);
+  MUS_NOTES.forEach((m,i)=>{
+    const period=17+i*2.3+Math.random()*3;
+    schedVoice(m,period,Math.random()*period);
+  });
+}
+function schedVoice(m,periodS,delayS){
+  setTimeout(()=>{ if(!AC) return; padNote(m); schedVoice(m,periodS,periodS); }, delayS*1000);
+}
+function padNote(m){
+  if(!AC||!musOn) return;
+  const t=AC.currentTime;
+  for(const det of [0,2.5]){
+    const o=AC.createOscillator(); o.type='sine'; o.frequency.value=nHz(m); o.detune.value=det;
+    const g=AC.createGain();
+    g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(0.055,t+2.8);
+    g.gain.setValueAtTime(0.055,t+4.8);
+    g.gain.linearRampToValueAtTime(0,t+9.5);
+    o.connect(g); g.connect(verbIn);
+    o.start(t); o.stop(t+10);
+  }
+}
+function tone(m,vol,dur){
+  if(!AC||!musOn) return;
+  const t=AC.currentTime;
+  const o=AC.createOscillator(); o.type='triangle'; o.frequency.value=nHz(m);
+  const g=AC.createGain();
+  g.gain.setValueAtTime(0,t);
+  g.gain.linearRampToValueAtTime(vol,t+0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(verbIn);
+  o.start(t); o.stop(t+dur+0.1);
+}
+function sndSend(owner){
+  const now=performance.now();
+  if(now-lastPluck<120) return;
+  lastPluck=now;
+  tone(MUS_NOTES[(Math.random()*MUS_NOTES.length)|0]+12, owner===PLAYER?0.10:0.05, 1.6);
+}
+function sndCapture(){
+  const i=(Math.random()*(MUS_NOTES.length-2))|0;
+  tone(MUS_NOTES[i]+12,0.12,2.2); tone(MUS_NOTES[i+2]+12,0.10,2.6);
+}
+function sndUpgrade(){
+  [0,1,2].forEach(k=>setTimeout(()=>tone(MUS_NOTES[2+k]+12,0.11,1.8),250+180*k));
+}
+function sndEnd(won){
+  const seq=won?[3,4,5,6]:[2,1,0];
+  seq.forEach((i,k)=>setTimeout(()=>tone(MUS_NOTES[i]+(won?12:0),0.12,2.4),260*k));
+}
+document.addEventListener('pointerdown',()=>{ initAudio(); if(AC&&AC.state==='suspended') AC.resume(); },{capture:true});
+
 let nodes=[],fleets=[],packs=[],FX=[],botIds=[],aiTimers={},curMap=-1,demoOn=false,ended=false,sel=[];
-let dragging=false,dragPid=null,lasso=[],T=0;
+let dragging=false,dragPid=null,lasso=[],upTimer=null,T=0;
 let screenState='maps',endTimer=null;
 const FLEET_SPEED=150; // px/s in virtual space
-const UPGRADE_COST=100; // surplus units above cap consumed per planet level (max lvl 3)
+const UPGRADE_COST=100; // surplus units above cap consumed per planet level
+const MAXLVL=5;         // lvl5 = 5x the area and 5x the production of lvl1, 4 rings
 let showNums=false;
 
 // ---------- unit-swarm particles ----------
-function dotTarget(u){return Math.round(Math.min(140,Math.sqrt(Math.max(0,u))*9));}
-function sizeOf(n){return (8+Math.sqrt(n.baseCap)*1.5)*(1+0.35*(n.lvl-1));}
+function dotTarget(u){return Math.round(Math.min(170,Math.sqrt(Math.max(0,u))*9));}
+function sizeOf(n){return (8+Math.sqrt(n.baseCap)*1.5)*Math.sqrt(n.lvl);} // radius ∝ √lvl → area ∝ lvl (lvl5 = 5x area)
 function newDot(){return {a:Math.random()*7,av:(0.1+Math.random()*0.4)*(Math.random()<.5?-1:1),
   rr:Math.random(),wx:Math.random()*7,wy:Math.random()*7,fx:.5+Math.random()*1.2,fy:.5+Math.random()*1.2,
   sz:.8+Math.random()*.5};}
@@ -315,15 +435,17 @@ function syncDots(n){
   while(n.dots.length<t) n.dots.push(newDot());
   if(n.dots.length>t) n.dots.length=t;
 }
-function bandOf(n){return 14+n.dots.length*0.35;}
+function bandOf(n){return n.isPack? 8+n.dots.length*0.2 : 14+n.dots.length*0.35;} // packs cluster tight on their point
 
 function initMap(idx){
   curMap=idx; ended=false; sel=[]; fleets=[]; packs=[]; FX=[]; cancelDrag();
+  if(upTimer){ clearTimeout(upTimer); upTimer=null; }
   const m=MAPS[idx];
   nodes=m.nodes.map((n,i)=>{
     const lvl=n.lvl||1;
-    const node={id:i,x:n.x,y:n.y,baseCap:n.cap,lvl,cap:Math.round(n.cap*(1+0.5*(lvl-1))),
-      owner:n.owner,units:n.start,name:n.name,dots:[],ph:Math.random()*7};
+    const node={id:i,x:n.x,y:n.y,baseCap:n.cap,lvl,
+      maxLvl:n.noUp?lvl:(n.maxLvl||(n.cap>=90?4:n.cap>=50?3:2)),
+      owner:n.owner,units:n.start,name:n.name,noUp:n.noUp,dots:[],ph:Math.random()*7};
     node.coreR=sizeOf(node);
     return node;
   });
@@ -347,6 +469,7 @@ function show(which){
 function buildMapGrid(){
   const g=document.getElementById('mapGrid'); g.innerHTML='';
   MAPS.forEach((m,i)=>{
+    if(m.hidden) return; // toets-sandput: bereikbaar via #toets in die URL
     const c=document.createElement('div'); c.className='mapcard'; c.tabIndex=0;
     c.setAttribute('role','button');
     c.innerHTML=`<h3>${i+1}. ${m.name}</h3><p>${m.bots.length} bot${m.bots.length>1?'s':''} · ${m.nodes.length} planete</p>`;
@@ -356,6 +479,7 @@ function buildMapGrid(){
   });
 }
 buildMapGrid();
+if(location.hash==='#toets'){ const ti=MAPS.findIndex(m=>m.hidden); if(ti>=0) initMap(ti); }
 
 function spawnFleet(src,dst,units,owner){
   const dist=Math.hypot(dst.x-src.x,dst.y-src.y);
@@ -365,8 +489,22 @@ function spawnFleet(src,dst,units,owner){
     wp:Math.random()*7,ws:2+Math.random()*4,sz:.7+Math.random()*.7});
   fleets.push({owner,from:{x:src.x,y:src.y},toId:(typeof dst.id==='number'&&!dst.isPack)?dst.id:null,
     tx:dst.x,ty:dst.y,units,progress:0,dist:Math.max(1,dist),dots});
+  sndSend(owner);
 }
 
+const ABSORB_DUR=1.1; // upgrade ritual: swarm dives into the core, flash at the midpoint, spread back out
+function investRing(n){
+  if(n.noUp||n.owner==='neutral'||n.lvl>=n.maxLvl||n.units<UPGRADE_COST) return false;
+  n.units-=UPGRADE_COST; n.lvl++;
+  n.growFrom=n.coreR;
+  n.coreR=sizeOf(n);
+  n.anim=ABSORB_DUR;
+  // FX start negative so the flash/shockwave fire exactly when the swarm reaches the core
+  FX.push({kind:'cap',x:n.x,y:n.y,t:-ABSORB_DUR/2,dur:.9,colHex:OWNER_COLOR[n.owner],spr:SPR[n.owner],r1:n.coreR*3.8});
+  FX.push({kind:'flash',x:n.x,y:n.y,t:-ABSORB_DUR/2,dur:.65,colHex:'#ffffff',spr:{glow:WGLOW},r1:n.coreR*2.6});
+  sndUpgrade();
+  return true;
+}
 function sendFromSelection(target){
   for(const n of sel){
     if(n===target||n.owner!==PLAYER) continue;
@@ -387,6 +525,8 @@ function botThink(bot,margin){
   const inbound={};
   for(const f of fleets) if(f.owner===bot) inbound[f.toId]=(inbound[f.toId]||0)+f.units;
   for(const src of mine){
+    // bots invest too, but only with a defensive reserve left over
+    if(src.units>=UPGRADE_COST+80) investRing(src);
     let best=null,bestScore=-Infinity,bestNeed=0;
     for(const t of nodes){
       if(t===src||t.owner===bot) continue;
@@ -401,7 +541,7 @@ function botThink(bot,margin){
     if(best){
       const send=Math.min(src.units*0.7,bestNeed+10);
       if(send>3){ src.units-=send; spawnFleet(src,best,send,bot); inbound[best.id]=(inbound[best.id]||0)+send; acted=true; }
-    } else if(src.units>=src.cap*0.9){
+    } else if(src.units>=src.baseCap){
       // nothing attackable from here: feed the frontline (nearest friendly planet closer to the enemy)
       let ne=null,ned=Infinity;
       for(const t of nodes){
@@ -455,6 +595,7 @@ function checkEnd(){
 }
 function endGame(won){
   ended=true;
+  sndEnd(won);
   document.getElementById('winlose').textContent=won?'GEWEN!':'VERLOOR';
   document.getElementById('endTitle').textContent=won?'JY HET GEWEN!':'JY HET VERLOOR';
   document.getElementById('endSub').textContent=won?
@@ -480,12 +621,13 @@ requestAnimationFrame(loop);
 
 function update(dt){
   for(const n of nodes){
-    if(n.owner!=='neutral'&&n.units<n.cap){
-      // production scales with level: lvl2 = double, lvl3 = triple
-      n.units=Math.min(n.cap, n.units + (2+n.baseCap*0.05)*n.lvl*dt);
+    if(n.owner!=='neutral'){
+      // no cap: swarms grow without limit; production scales with level
+      n.units += (2+n.baseCap*0.05)*n.lvl*dt;
     }
     syncDots(n);
     for(const d of n.dots) d.a+=d.av*dt;
+    if(n.anim>0) n.anim-=dt;
   }
   for(const p of packs){
     syncDots(p);
@@ -512,19 +654,12 @@ function update(dt){
       if(t.units<0){
         t.owner=f.owner; t.units=Math.max(1,-t.units);
         FX.push({kind:'cap',x:t.x,y:t.y,t:0,dur:.9,colHex:OWNER_COLOR[f.owner],spr:SPR[f.owner],r1:t.coreR*3.4});
+        sndCapture();
       }
     }
     FX.push({kind:'burst',x:t.x,y:t.y,t:0,dur:.45,colHex:OWNER_COLOR[f.owner],spr:SPR[f.owner],r1:10+Math.sqrt(f.units)*4});
   }
-  for(const n of nodes){
-    while(n.owner!=='neutral' && n.lvl<3 && n.units>=n.cap+UPGRADE_COST){
-      n.units-=UPGRADE_COST; n.lvl++;
-      n.cap=Math.round(n.baseCap*(1+0.5*(n.lvl-1)));
-      n.coreR=sizeOf(n);
-      FX.push({kind:'cap',x:n.x,y:n.y,t:0,dur:.9,colHex:OWNER_COLOR[n.owner],spr:SPR[n.owner],r1:n.coreR*3.8});
-      FX.push({kind:'flash',x:n.x,y:n.y,t:0,dur:.65,colHex:'#ffffff',spr:{glow:WGLOW},r1:n.coreR*2.6});
-    }
-  }
+  // upgrades are DELIBERATE: nothing auto-invests — see investRing() (player: click-again; bots: botThink)
   if(sel.length) sel=sel.filter(e=>e.owner===PLAYER&&(!e.isPack||e.units>=1));
   const bots=demoOn? botIds.concat([PLAYER]) : botIds;
   for(const b of bots){
@@ -548,45 +683,65 @@ function render(){
   // additive pass: glows, swarms, streams, effect flashes
   ctx.globalCompositeOperation='lighter';
   for(const n of nodes){
-    const s=SPR[n.owner], r=n.coreR;
-    const full=n.units>=n.cap;
-    const pulse=1+Math.sin(T*1.6+n.ph)*0.04+(full?Math.sin(T*3+n.ph)*0.05:0);
-    blit(s.glow,n.x,n.y,r*4.6*pulse,.8);
-    blit(s.core,n.x,n.y,r*2.0*pulse);
-    if(n.lvl>1){
-      // thick soft halo rings for levelled suns
-      ctx.strokeStyle='rgba(190,200,210,.09)';
-      ctx.lineWidth=r*.42;
-      ctx.beginPath(); ctx.arc(n.x,n.y,r*1.6,0,7); ctx.stroke();
-      if(n.lvl>2){
-        ctx.lineWidth=r*.3;
-        ctx.beginPath(); ctx.arc(n.x,n.y,r*1.95,0,7); ctx.stroke();
-      }
+    const s=SPR[n.owner];
+    let r=n.coreR, rScale=1;
+    if(n.anim>0){
+      // upgrade ritual: first half sucks the swarm into the core at the OLD size,
+      // second half grows the body to its new size while the swarm spreads back out
+      const p=1-n.anim/ABSORB_DUR, g0=n.growFrom||r;
+      if(p<0.5){ const q=p/0.5; rScale=1-q*q; r=g0; }
+      else { const q=(p-0.5)/0.5, e=q*q*(3-2*q); rScale=e; r=g0+(n.coreR-g0)*e; }
     }
-    if(n.owner!=='neutral'&&n.lvl<3&&n.units>n.cap){
-      // the planet visibly fills white as the upgrade surplus builds
-      const frac=Math.min(1,(n.units-n.cap)/UPGRADE_COST);
-      blit(WGLOW,n.x,n.y,r*(1.2+frac*1.1),.2+.6*frac);
-    }
+    const full=n.lvl>=n.maxLvl;
+    const pulse=1+Math.sin(T*1.6+n.ph)*0.03+(full?Math.sin(T*3+n.ph)*0.04:0);
+    blit(s.glow,n.x,n.y,r*4.8*pulse,.85);
     if(n.owner!=='neutral'){
-      // corona rays: the living-sun look
-      const rays=12, rot=T*0.18+n.ph;
-      ctx.strokeStyle=rgba(OWNER_COLOR[n.owner],.22); ctx.lineWidth=1.4;
+      // long pale light-shafts radiating from behind the body (the Auralux ray fan)
+      const rays=14, rot=T*0.1+n.ph;
+      ctx.strokeStyle='rgba(205,220,212,.09)';
+      ctx.lineCap='round';
+      ctx.lineWidth=Math.max(2.5,r*.1);
       ctx.beginPath();
       for(let i=0;i<rays;i++){
         const a=rot+i*Math.PI*2/rays;
-        const l=r*(1.55+0.35*Math.sin(T*2.2+i*1.7+n.ph));
+        const l=r*(1.5+0.45*Math.sin(T*1.7+i*2.1+n.ph));
         ctx.moveTo(n.x+Math.cos(a)*r*.7,n.y+Math.sin(a)*r*.7);
         ctx.lineTo(n.x+Math.cos(a)*l,n.y+Math.sin(a)*l);
       }
       ctx.stroke();
+      ctx.lineCap='butt';
+    }
+    // opaque textured sun body, rotating slowly
+    ctx.globalCompositeOperation='source-over';
+    ctx.save();
+    ctx.translate(n.x,n.y); ctx.rotate(T*0.05+n.ph);
+    const bs=r*2.17*pulse;
+    ctx.drawImage(s.body,-bs/2,-bs/2,bs,bs);
+    ctx.restore();
+    ctx.globalCompositeOperation='lighter';
+    if(!n.noUp){
+      // nested GRAY growth rings: one per remaining level — the sun swallows them as it grows
+      const ra=n.owner==='neutral'?.75:1;
+      for(let L=n.lvl+1;L<=n.maxLvl;L++){
+        const nr=sizeOf({baseCap:n.baseCap,lvl:L});
+        ctx.strokeStyle=`rgba(170,180,176,${.18*ra})`; ctx.lineWidth=nr*.24;
+        ctx.beginPath(); ctx.arc(n.x,n.y,nr,0,7); ctx.stroke();
+        ctx.strokeStyle=`rgba(200,210,205,${.28*ra})`; ctx.lineWidth=nr*.09;
+        ctx.beginPath(); ctx.arc(n.x,n.y,nr,0,7); ctx.stroke();
+      }
+    }
+    if(n.owner!=='neutral'&&!n.noUp&&n.lvl<n.maxLvl&&n.units>0){
+      // the planet visibly fills white on its way to the next ring
+      const frac=Math.min(1,n.units/UPGRADE_COST);
+      blit(WGLOW,n.x,n.y,r*(1.2+frac*1.1),.2+.6*frac);
     }
     const band=bandOf(n);
+    const rs=Math.max(.03,rScale);
     for(const d of n.dots){
-      const rr=r*1.3+d.rr*band;
+      const rr=(r*1.3+d.rr*band)*rs;
       blit(s.dot,
-        n.x+Math.cos(d.a)*rr+Math.sin(T*d.fx+d.wx)*9,
-        n.y+Math.sin(d.a)*rr+Math.cos(T*d.fy+d.wy)*9,
+        n.x+Math.cos(d.a)*rr+Math.sin(T*d.fx+d.wx)*9*rs,
+        n.y+Math.sin(d.a)*rr+Math.cos(T*d.fy+d.wy)*9*rs,
         8*d.sz);
     }
   }
@@ -613,6 +768,7 @@ function render(){
     }
   }
   for(const f of FX){
+    if(f.t<0) continue;
     const p=f.t/f.dur;
     blit(f.spr.glow,f.x,f.y,f.r1*2.4*(0.4+p),(1-p)*(f.kind==='cap'?.95:f.kind==='flash'?1:.7));
   }
@@ -623,19 +779,9 @@ function render(){
     const colHex=OWNER_COLOR[n.owner], r=n.coreR;
     const neutral=n.owner==='neutral';
     // concentric target rings: 3 soft gray rings on neutrals, lvl colored rings on owned suns
-    const ringN=neutral?1+n.lvl:n.lvl;
-    for(let i=0;i<ringN;i++){
-      const rr=r*(1.35+i*0.5);
-      ctx.strokeStyle=rgba(colHex,(neutral?.3:.36)-i*.07);
-      ctx.lineWidth=3.5;
-      ctx.beginPath(); ctx.arc(n.x,n.y,rr,0,7); ctx.stroke();
-      ctx.strokeStyle=rgba(colHex,(neutral?.5:.58)-i*.1);
-      ctx.lineWidth=1.2;
-      ctx.beginPath(); ctx.arc(n.x,n.y,rr,0,7); ctx.stroke();
-    }
-    if(!neutral&&n.lvl<3&&n.units>n.cap){
-      const frac=Math.min(1,(n.units-n.cap)/UPGRADE_COST);
-      ctx.strokeStyle='rgba(255,255,255,.85)';
+    if(!neutral&&!n.noUp&&n.lvl<n.maxLvl&&n.units>0){
+      const frac=Math.min(1,n.units/UPGRADE_COST);
+      ctx.strokeStyle=`rgba(255,255,255,${frac>=1?.55+.3*Math.sin(T*5):.85})`;
       ctx.lineWidth=2.5;
       ctx.beginPath(); ctx.arc(n.x,n.y,r*1.15,-Math.PI/2,-Math.PI/2+frac*Math.PI*2); ctx.stroke();
     }
@@ -645,8 +791,8 @@ function render(){
       ctx.beginPath(); ctx.arc(n.x,n.y,r*1.3+bandOf(n)+6,0,7); ctx.stroke();
     }
     if(n.name){
-      ctx.fillStyle='rgba(5,9,7,.85)';
-      ctx.font=`bold ${Math.max(14,Math.round(r*.95))}px 'Press Start 2P',VT323,monospace`;
+      ctx.fillStyle='rgba(10,14,8,.6)';
+      ctx.font=`bold ${Math.max(12,Math.round(r*.55))}px 'Press Start 2P',VT323,monospace`;
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(n.name,n.x,n.y);
       if(showNums){
@@ -676,7 +822,7 @@ function render(){
   }
   ctx.textAlign='left'; ctx.textBaseline='alphabetic';
   for(const f of FX){
-    if(f.kind==='flash') continue;
+    if(f.kind==='flash'||f.t<0) continue;
     const p=f.t/f.dur, ease=0.2+0.8*(1-(1-p)*(1-p));
     ctx.strokeStyle=rgba(f.colHex,(1-p)*.8);
     ctx.lineWidth=f.kind==='cap'?2.2:1.4;
@@ -745,6 +891,12 @@ cv.addEventListener('pointerdown',e=>{
     if(hit.owner===PLAYER){
       if(e.shiftKey){ const i=sel.indexOf(hit); if(i>=0) sel.splice(i,1); else sel.push(hit); }
       else if(sel.length&&!(sel.length===1&&sel[0]===hit)){ sendFromSelection(hit); sel=[]; }
+      else if(sel.length===1&&sel[0]===hit){
+        // click-again on the selected sun: deliberately invest 100 units in its next ring
+        // (short delay so a double-click can cancel it and select-all instead)
+        if(upTimer) clearTimeout(upTimer);
+        upTimer=setTimeout(()=>{ upTimer=null; if(hit.owner===PLAYER) investRing(hit); },280);
+      }
       else sel=[hit];
     } else if(sel.length){ sendFromSelection(hit); sel=[]; }
   } else {
@@ -771,7 +923,8 @@ cv.addEventListener('pointerup',e=>{
     minx=Math.min(minx,p[0]); maxx=Math.max(maxx,p[0]);
     miny=Math.min(miny,p[1]); maxy=Math.max(maxy,p[1]);
   }
-  const moved=lasso.length>=3&&(maxx-minx>10||maxy-miny>10);
+  // only a real drawn circle counts as a lasso — a wobbly tap stays a park/tap order
+  const moved=lasso.length>=3&&(maxx-minx>28||maxy-miny>28);
   if(moved){
     if(!e.shiftKey) sel=[];
     for(const c of nodes.concat(packs)){
@@ -789,6 +942,7 @@ cv.addEventListener('pointercancel',e=>{ if(e.pointerId===dragPid) cancelDrag();
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 cv.addEventListener('dblclick',e=>{
   if(demoOn||ended||screenState!=='game') return;
+  if(upTimer){ clearTimeout(upTimer); upTimer=null; }
   const v=toVirtual(e.clientX,e.clientY);
   const hit=nodeAt(v[0],v[1]);
   if(hit&&hit.owner===PLAYER) sel=nodes.filter(n=>n.owner===PLAYER).concat(packs.filter(p=>p.owner===PLAYER));
@@ -804,6 +958,11 @@ document.getElementById('cDemo').onchange=e=>{ demoOn=e.target.checked; sel=[]; 
 document.getElementById('bGetalle').onclick=()=>{
   showNums=!showNums;
   document.getElementById('bGetalle').textContent=showNums?'Getalle: AAN':'Getalle: AF';
+};
+document.getElementById('bMus').onclick=()=>{
+  musOn=!musOn;
+  document.getElementById('bMus').textContent=musOn?'Musiek: AAN':'Musiek: AF';
+  if(MG&&AC) MG.gain.linearRampToValueAtTime(musOn?0.9:0,AC.currentTime+0.6);
 };
 document.getElementById('bAgain').onclick=()=>{ initMap(curMap); };
 document.getElementById('bToMaps').onclick=openMaps;
