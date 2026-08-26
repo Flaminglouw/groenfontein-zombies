@@ -80,7 +80,6 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
 </style>
 
 <div class="screen on" id="scrMenu">
-  <button class="btn ghost" id="bKanon" style="position:absolute;top:10px;right:10px;z-index:11;font-size:16px;padding:3px 10px;margin:0;background:rgba(20,30,26,.85)">🎖️ Kanontjie vir Pa</button>
   <div class="panel">
   <h1>DRIE BROERS</h1>
   <div class="sub">GROENFONTEIN ZOMBIES</div>
@@ -100,7 +99,7 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
   <div class="sub" style="color:var(--gold)">KIES JOU HOOFSTUK</div>
   <div class="cards" id="chapCards"></div>
   <button class="btn ghost" id="bBackChap" style="margin-top:18px">Terug</button>
-  <div style="margin-top:14px;display:flex;gap:10px;justify-content:center"><a class="btn ghost" href="ontspan.html" style="text-decoration:none">🌿 Ontspan — geen zombies</a><a class="btn ghost" href="stormloop.html" style="text-decoration:none">🏃 Stormloop!</a></div>
+  <div style="margin-top:14px;display:flex;gap:10px;justify-content:center"><a class="btn ghost" href="ontspan.html" style="text-decoration:none">🌿 Ontspan — geen zombies</a><a class="btn ghost" href="stormloop.html" style="text-decoration:none">🏃 Stormloop!</a><button class="btn ghost" id="bKanon">🎖️ Kanontjie vir Pa</button></div>
 </div></div>
 
 <div class="screen" id="scrKanon" style="padding:0">
@@ -4823,7 +4822,7 @@ function kanonOpen(){
 function kanonClose(){
   if(kanonH){try{kanonH.destroy()}catch(_){}kanonH=null;}
   document.getElementById('kanonGame').innerHTML='';
-  refreshMenu();show('menu');
+  buildChapCards();show('chaps'); // die knoppie sit nou op die hoofstuk-skerm
 }
 function kanonLocalAdd(e){
   SAVE.kanon=SAVE.kanon||[];
