@@ -608,8 +608,45 @@ function makeLight(r,g,b,punch){
   gr.addColorStop(.42,`rgba(${r},${g},${b},${(punch*.4).toFixed(3)})`);
   gr.addColorStop(1,`rgba(${r},${g},${b},0)`);
   x.fillStyle=gr;x.fillRect(0,0,128,128);
+  c.rgb=[r,g,b];c.p=punch*1.55;  // die ligveld lees hierdie; die doek self is die ou pad
+                                 // 1.55 nie 2.6 nie: oorvleuelende ligte tel OP, en 4 ligte op die werf het na 474 gestoot (255 = wit)
   return c;
 }
+/* Lees die ligveld by 'n WÊRELD-punt. O(1), bilineêr, geen getImageData.
+   Dit is die funksie wat lyfligting moontlik maak.                        */
+let lgCamX=0,lgCamY=0;
+function ligBy(wx,wy){
+  // Bedags loop die nag-blok glad nie, dus is die rooster nie gevul nie.
+  // Sonder hierdie wag lees elke lyf vlak 0 en word swart in helder daglig.
+  if(!lgBuf||!lgOn)return LIG_DAG;
+  const sx=wx-lgCamX, sy=wy-lgCamY;
+  const fx=sx/LG+.5, fy=sy/LG+.5;
+  let x0=fx|0, y0=fy|0;
+  if(x0<0)x0=0;else if(x0>lgW-2)x0=lgW-2;
+  if(y0<0)y0=0;else if(y0>lgH-2)y0=lgH-2;
+  const tx=Math.min(1,Math.max(0,fx-x0)), ty=Math.min(1,Math.max(0,fy-y0));
+  const i00=(x0+y0*lgW)*3, i10=i00+3, i01=i00+lgW*3, i11=i01+3;
+  const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+  const r=lgBuf[i00]*w00+lgBuf[i10]*w10+lgBuf[i01]*w01+lgBuf[i11]*w11;
+  const g=lgBuf[i00+1]*w00+lgBuf[i10+1]*w10+lgBuf[i01+1]*w01+lgBuf[i11+1]*w11;
+  const b=lgBuf[i00+2]*w00+lgBuf[i10+2]*w10+lgBuf[i01+2]*w01+lgBuf[i11+2]*w11;
+  return {r,g,b,lum:Math.min(1,(r*.3+g*.59+b*.11)/255)};
+}
+const LIG_DAG={r:255,g:255,b:255,lum:1};
+/* ---------- DIE LIGVELD ----------
+   D2 monster lig op 'n GROWWE rooster en interpoleer dit; die blaaier se
+   bilineêre opskaling van 'n klein doek gee ons daardie interpolasie gratis.
+   Elke sel hou 'n RGB-ligwaarde. Een multiply-blit vervang die ou donker-laken
+   EN die warm laag, en ligBy() laat elke lyf sy eie ligvlak lees.            */
+let LG=14, lgW=0, lgH=0, lgBuf=null, lgCv=null, lgCtx=null, lgImg=null, lgOn=false;
+const BANDS=12;                       // D2 se ligval het sigbare trappe, nie 'n gladde verloop nie
+const FALL=new Float32Array(65);
+for(let i=0;i<65;i++){                // i = (afstand/radius)^2 * 64
+  const t=Math.sqrt(i/64);
+  FALL[i]=Math.max(0,1-t)*(1-t*.35);  // effens vinniger as lineêr, sagte stert
+}
+// 4x4 Bayer — kartel die bandrande sodat hulle nie perfekte sirkels is nie
+const BAYER=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v=>(v/16-.5)/BANDS);
 const L_LANTERN=makeLight(255,188,116,.15),  // jou lantern: warm parafien, SWAK — dit is omgewingslig
       L_TORCH  =makeLight(255,146,52 ,.52),  // werf-fakkels
       L_FIRE   =makeLight(255,108,22 ,.72),  // vuur
@@ -617,12 +654,21 @@ const L_LANTERN=makeLight(255,188,116,.15),  // jou lantern: warm parafien, SWAK
       L_GEM    =makeLight(120,255,140,.55),  // juwele
       L_ACID   =makeLight(150,255,80 ,.60);
 // nagkleur per fase — koue blou diep in die nag, warm bruin teen skemer
+/* Die tint moet GLY, nie klap nie. Dit het by t=330/600/750 gestap terwyl
+   nightAlpha() glad oor presies daardie grense ramp, dus het die kleur middel-in
+   elke oorgang omgeklap. Nou interpoleer dit op dieselfde t as die alfa.        */
+const NAGKLEUR=[[0,[16,11,22]],[330,[5,8,24]],[600,[5,8,24]],[660,[20,19,28]],
+                [750,[20,19,28]],[900,[4,7,20]],[99999,[4,7,20]]];
 function nightRGB(){
   const t=G?G.time:0;
-  if(t<330) return [16,11,22];        // skemer: pers-bruin
-  if(t<600) return [5,8,24];          // diep nag: koue blou
-  if(t<750) return [20,19,28];        // dagbreek: koel grys
-  return [4,7,20];                    // die tweede, dieper nag
+  for(let i=1;i<NAGKLEUR.length;i++){
+    const [t1,c1]=NAGKLEUR[i], [t0,c0]=NAGKLEUR[i-1];
+    if(t<=t1){
+      const k=t1===t0?0:(t-t0)/(t1-t0);
+      return [c0[0]+(c1[0]-c0[0])*k, c0[1]+(c1[1]-c0[1])*k, c0[2]+(c1[2]-c0[2])*k].map(Math.round);
+    }
+  }
+  return [4,7,20];
 }
 function resize(){
   DPR=LOWFX?1:Math.min(2,window.devicePixelRatio||1); // DPR 1 halveer die rasterwerk op stadige fone
@@ -633,8 +679,17 @@ function resize(){
   darkCtx=darkCv.getContext('2d');
   warmCv=document.createElement('canvas');warmCv.width=VW;warmCv.height=VH;
   warmCtx=warmCv.getContext('2d');
+  // ligrooster — een sel se vulling aan elke kant, anders knip 'n lig net buite
+  // die skerm sy bydrae af en jy sien 'n harde rand terwyl jy stap
+  lgW=Math.ceil(VW/LG)+2; lgH=Math.ceil(VH/LG)+2;
+  lgBuf=new Float32Array(lgW*lgH*3);
+  lgCv=document.createElement('canvas');lgCv.width=lgW;lgCv.height=lgH;
+  lgCtx=lgCv.getContext('2d');
+  lgImg=lgCtx.createImageData(lgW,lgH);
   vign=ctx.createRadialGradient(VW/2,VH/2,Math.min(VW,VH)*.42,VW/2,VH/2,Math.max(VW,VH)*.72);
-  vign.addColorStop(0,'rgba(0,0,0,0)');vign.addColorStop(1,'rgba(6,10,4,.5)');
+  // koel, nie groen nie: 'n groen-swart vignet het teen die blou nagtint geveg,
+  // sodat die rande groen geword het terwyl die middel blou gaan.
+  vign.addColorStop(0,'rgba(0,0,0,0)');vign.addColorStop(1,'rgba(5,8,16,.52)');
 }
 window.addEventListener('resize',resize);resize();
 
@@ -851,23 +906,96 @@ function buildBG(){
   // kraal
   b.fillStyle='#b39a63';b.globalAlpha=.8;b.beginPath();b.ellipse(1150,1720,75,58,0,0,TAU);b.fill();b.globalAlpha=1;
   b.strokeStyle='#6b5b3f';b.lineWidth=3;b.setLineDash([8,7]);b.beginPath();b.ellipse(1150,1720,78,61,0,0,TAU);b.stroke();b.setLineDash([]);
-  // geboue
-  function roof(x,y,w,h,col,ridge){
-    b.fillStyle='rgba(0,0,0,.3)';b.fillRect(x+5,y+6,w,h);
-    b.fillStyle=col;b.fillRect(x,y,w,h);
-    b.strokeStyle='rgba(0,0,0,.35)';b.lineWidth=2;b.strokeRect(x,y,w,h);
-    if(ridge){b.strokeStyle='rgba(255,255,255,.25)';b.beginPath();
-      if(w>h){b.moveTo(x,y+h/2);b.lineTo(x+w,y+h/2);}else{b.moveTo(x+w/2,y);b.lineTo(x+w/2,y+h);}b.stroke();}
+  /* ============================ GEBOUE ============================
+     Geboue het volume: 'n dak met 'n nok, 'n muurvlak wat jy sien, 'n
+     oorhang-skadu en 'n werpskadu op die grond. Son kom van links-bo, net
+     soos die res van die toneel.
+     BELANGRIK — die VOETSTUK (x,y,w,h) bly presies dieselfde reghoek as die
+     botser in OBST (:691-698). Alles behalwe die werpskadu word BINNE daardie
+     reghoek geteken, dus is wat jy sien steeds presies wat jy stamp, en niks
+     aan botsing, sortering of die kamera verander nie.                     */
+  const shade=(hex,f)=>{const n=parseInt(hex.slice(1),16);
+    const r=Math.max(0,Math.min(255,Math.round((n>>16&255)*f))),
+          g=Math.max(0,Math.min(255,Math.round((n>>8&255)*f))),
+          bl=Math.max(0,Math.min(255,Math.round((n&255)*f)));
+    return 'rgb('+r+','+g+','+bl+')';};
+  function roof(x,y,w,h,col,ridge,muurCol){
+    const wh=Math.max(13,Math.min(Math.round(h*.44),34));  // muurhoogte binne die voetstuk
+    const ry=y+h-wh;                                       // dakvoet = bokant van die muur
+    const rh=ry-y;                                         // dakband
+    const eav=Math.max(3,Math.min(6,w*.05));               // oorhang
+    const hip=Math.min(rh*.5,w*.2);                        // hoe ver die nok inspring
+    const yr=y+rh*.46;                                     // nok
+    const muur=muurCol||shade(col,.78);
+    // 1 werpskadu op die grond, regs-onder (mag buite die voetstuk val — skaduwees bots nie)
+    b.fillStyle='rgba(16,22,11,.30)';
+    b.beginPath();b.moveTo(x+w*.16,y+h);b.lineTo(x+w+eav,y+h);
+    b.lineTo(x+w+eav+13,y+h+11);b.lineTo(x+w*.16+13,y+h+11);b.closePath();b.fill();
+    // 2 muurvlak + donker oostekant + kontaklyn
+    b.fillStyle=muur;b.fillRect(x,ry,w,wh);
+    b.fillStyle=shade(col,.6);b.fillRect(x+w-Math.min(11,w*.14),ry,Math.min(11,w*.14),wh);
+    b.fillStyle='rgba(16,22,11,.26)';b.fillRect(x,y+h-4,w,4);
+    // 3 dak: verste helling donker, naaste helling lig, nok tussenin
+    b.fillStyle=shade(col,.74);
+    b.beginPath();b.moveTo(x-eav,ry);b.lineTo(x-eav,y);b.lineTo(x+w+eav,y);
+    b.lineTo(x+w+eav,ry);b.closePath();b.fill();
+    b.fillStyle=col;
+    b.beginPath();b.moveTo(x-eav,ry);b.lineTo(x+hip,yr);b.lineTo(x+w-hip,yr);
+    b.lineTo(x+w+eav,ry);b.closePath();b.fill();
+    // 4 sinkplaat-ribbels oor albei hellings
+    b.strokeStyle='rgba(16,22,11,.18)';b.lineWidth=2;
+    for(let i=1;i<Math.max(3,w/14);i++){const t=i/Math.max(3,w/14);
+      b.beginPath();b.moveTo(x-eav+(w+eav*2)*t,y);b.lineTo(x-eav+(w+eav*2)*t,ry);b.stroke();}
+    // 5 nok-hoogtelig
+    if(ridge){b.strokeStyle='rgba(255,244,214,.34)';b.lineWidth=3;
+      b.beginPath();b.moveTo(x+hip,yr);b.lineTo(x+w-hip,yr);b.stroke();}
+    // 6 oorhang-skadu wat die dak op die muur gooi
+    b.fillStyle='rgba(16,22,11,.30)';b.fillRect(x,ry,w,5);
+    // 7 kontoer om die hele silhoeët — die enkele grootste leesbaarheidswins
+    b.strokeStyle='rgba(14,20,10,.72)';b.lineWidth=3;
+    b.beginPath();b.rect(x-eav,y,w+eav*2,rh);b.stroke();
+    b.beginPath();b.rect(x,ry,w,wh);b.stroke();
   }
-  roof(1330,1380,150,110,'#b9b3a4',true);            // groot skuur
-  b.fillStyle='#2e4a66';                             // sonpanele
-  for(let px=0;px<3;px++)for(let py=0;py<4;py++)b.fillRect(1342+px*22,1392+py*20,18,16);
+  /* Die muurvlak word in n gelyke gleuwe verdeel: die laaste gleuf kry die
+     deur, die res kry vensters. Deur die posisies uit die gleuwe af te lei
+     kan 'n venster en 'n deur nooit oormekaar val nie, ongeag die gebou se
+     breedte — wat wel gebeur het toe albei hul eie fraksie gehad het.      */
+  function muurgoed(x,y,w,h,n){
+    const wh=Math.max(13,Math.min(Math.round(h*.44),34)), ry=y+h-wh;
+    const sw=w/n;
+    for(let i=0;i<n;i++){
+      const cx=x+sw*(i+.5);
+      if(i<n-1){                                   // venster: wyer as hoog
+        const vw=Math.min(20,sw*.6), vh=Math.max(7,Math.round(wh*.42)), vy=ry+Math.round(wh*.3);
+        b.fillStyle='#23303c';b.fillRect(cx-vw/2,vy,vw,vh);
+        b.fillStyle='#4d6a82';b.fillRect(cx-vw/2+1.5,vy+1.5,vw-3,vh-3);
+        b.fillStyle='rgba(210,232,255,.30)';b.fillRect(cx-vw/2+1.5,vy+1.5,(vw-3)*.42,vh-3);
+        b.fillStyle='rgba(16,22,11,.5)';b.fillRect(cx-vw/2,vy,vw,1.5);   // latei-skadu
+      }else{                                       // deur
+        const dw=Math.min(15,sw*.52);
+        b.fillStyle='#2b2015';b.fillRect(cx-dw/2,ry+wh*.28,dw,wh*.72);
+        b.fillStyle='rgba(210,232,255,.10)';b.fillRect(cx-dw/2,ry+wh*.28,dw*.3,wh*.72);
+        b.strokeStyle='rgba(14,20,10,.6)';b.lineWidth=2;
+        b.strokeRect(cx-dw/2,ry+wh*.28,dw,wh*.72);
+      }
+    }
+  }
+  roof(1330,1380,150,110,'#b9b3a4',true,'#a89e88');  // groot skuur
+  b.fillStyle='#2e4a66';                             // sonpanele — net op die VERSTE helling
+  for(let px=0;px<3;px++)for(let py=0;py<2;py++)b.fillRect(1344+px*23,1388+py*16,19,13);
+  b.strokeStyle='rgba(16,22,11,.45)';b.lineWidth=1.5;
+  for(let px=0;px<3;px++)for(let py=0;py<2;py++)b.strokeRect(1344+px*23,1388+py*16,19,13);
+  muurgoed(1330,1380,150,110,4);                     // 3 vensters + deur
   roof(1487,1408,42,54,'#8f8a7c');                   // afdak
-  roof(1300,1560,110,80,'#7d5b45',true);             // opstal
-  roof(1440,1625,80,60,'#a24d3a',true);              // rooidak
+  roof(1300,1560,110,80,'#7d5b45',true,'#8a7658');   // opstal
+  muurgoed(1300,1560,110,80,3);
+  roof(1440,1625,80,60,'#a24d3a',true,'#c9c0aa');    // rooidak
+  muurgoed(1440,1625,80,60,3);
   roof(1560,1398,46,40,'#8a806e');                   // buitegebou
   roof(1252,1836,70,50,'#6f6a5c');                   // onderste skure
+  muurgoed(1252,1836,70,50,2);
   roof(1402,1874,60,44,'#7d5b45');
+  muurgoed(1402,1874,60,44,2);
   // ronde reservoir
   b.fillStyle='rgba(0,0,0,.3)';b.beginPath();b.arc(1624,1765,48,0,TAU);b.fill();
   b.fillStyle='#9aa0a2';b.beginPath();b.arc(1620,1760,48,0,TAU);b.fill();
@@ -1959,6 +2087,20 @@ function update(dt){
     if(z.dogCd>0)z.dogCd-=dt;
     if(z.lidCd>0)z.lidCd-=dt;
     z.wob+=dt*6;
+    /* GANG — die kruk waarop die druk-en-rek by teken-tyd loop. Dit word deur
+       AFSTAND BEWEEG gedryf, nie deur tyd nie, sodat 'n vasgekeerde of
+       verdwaasde lyf regtig stilstaan in plaas van op sy plek te wieg.
+       Dit mag NIE z.wob hergebruik nie: z.wob se tempo is draend vir die
+       runner se slingerstuur (:2196) en Jan se wielspeke, so 'n ander tempo
+       daar breek albei. Die fase word uit z.wob gesaai — dié is per zombie
+       ewekansig by spawn — anders wieg die hele horde in pas.
+       Die klem hou 'n opgekikkerde runner van stroboskoop af.               */
+    if(z.gait===undefined){z.gait=z.wob;z.gpx=z.x;z.gpy=z.y;}
+    else{
+      const mv=Math.hypot(z.x-z.gpx,z.y-z.gpy);
+      z.gait+=Math.min(mv*.11,dt*9);
+      z.gpx=z.x;z.gpy=z.y;
+    }
     const pdx=px-z.x,pdy=py-z.y,pd=Math.hypot(pdx,pdy)||1;
     let tX=px,tY=py;
     if(G.decoys&&G.decoys.length&&z.type!=='boss'&&!(z.ally>0)){
@@ -2774,7 +2916,11 @@ function drawZRest(c,z,a,body,dark,mono){ // dekor + kop + oë; mono='#fff' teke
 // Bul/vlakvark kry net die romp gebak — hul regop horings/borsels en kop teken lewendig bo-oor,
 // anders draai dié dekor saam met die kykrigting. Boss/hoed/variante bly heeltemal lewendig.
 // wht = wit silhoeët vir die tref-flits. Nuwe tipe sonder ZBASE-inskrywing val terug na lewendige verf.
-const ZSPR={},ZSS=3;
+const ZSPR={},ZSS=3,LV_N=12,LV_K=.72;  // LV_N ligvlakke per tipe; LV_K = hoeveel van die verdonkering die lyf self dra
+/* Een gedeelde ink vir ALLE horde-silhoeëtte. Moet apart wees van zCols se
+   `dark`: daardie kleur is ook die streek vir die arms en die horings, en as
+   jy dit na swart stoot word elke zombie se ledemate solied swart stokke.   */
+const ZINK='#131a10', ZINK_D=.62;      // ZINK_D = dilasie in gebakte pixels (x ZSS)
 {
   const ZBASE={plaas:13,runner:11,spoeger:12,skaap:14,lam:8,bul:24,vlakvark:16};
   for(const tp in ZBASE)for(let t=0;t<(tp==='plaas'?3:1);t++){
@@ -2785,12 +2931,67 @@ const ZSPR={},ZSS=3;
     b.translate(half*ZSS,half*ZSS);b.scale(ZSS,ZSS);
     drawZTrunk(b,z,0,bd[0],bd[1]);
     if(tp!=='bul'&&tp!=='vlakvark')drawZRest(b,z,0,bd[0],bd[1]);
-    const w=document.createElement('canvas');w.width=w.height=s.width;
+    /* KONTOER, by BAKTYD — dus gratis by looptyd, en al 12 ligvlakke hieronder
+       erf dit. Ons maak 'n ink-kopie van die silhoeët en stempel dit agt keer
+       in 'n sirkel uit, dan die kleurlyf bo-oor: dis 'n dilasie, nie 'n streek
+       nie, so dit volg die presiese vorm insluitend die arms.
+       LET WEL — 'n gebakte VORM-skadu (donkerder onder) kan hier NIE nie: die
+       sprite word by looptyd geroteer om na die speler te kyk (drawZombie se
+       c.rotate(a)), dus sou 'n vertikale gradiënt saam met die lyf draai en die
+       "onder" sou saam met die kykrigting rondloop. 'n Kontoer is rotasie-veilig
+       want 'n ring om die silhoeët lyk uit elke hoek dieselfde.               */
+    let base=s;
+    {
+      const ik=document.createElement('canvas');ik.width=ik.height=s.width;
+      const ikc=ik.getContext('2d');
+      ikc.drawImage(s,0,0);
+      /* Harde drempel op die alfa VOOR die dilasie. Sonder dit stempel jy 'n
+         anti-aliased rand agt keer uit en kry 'n wasige halo in plaas van 'n
+         lyn — die lyf lyk soos 'n waterlelie. Dis 'n eenmalige getImageData op
+         'n 150px doek by opstart, nie in 'n warm lus nie.                    */
+      const idat=ikc.getImageData(0,0,ik.width,ik.height), P=idat.data;
+      for(let i=3;i<P.length;i+=4)P[i]=P[i]>110?255:0;
+      ikc.putImageData(idat,0,0);
+      ikc.globalCompositeOperation='source-in';
+      ikc.fillStyle=ZINK;ikc.fillRect(0,0,ik.width,ik.height);
+      const o=document.createElement('canvas');o.width=o.height=s.width;
+      const oc=o.getContext('2d');
+      const dl=Math.max(2,Math.round(ZSS*ZINK_D));
+      for(let i=0;i<8;i++){const ang=i/8*TAU;
+        oc.drawImage(ik,Math.round(Math.cos(ang)*dl),Math.round(Math.sin(ang)*dl));}
+      oc.drawImage(s,0,0);
+      base=o;
+    }
+    const w=document.createElement('canvas');w.width=w.height=base.width;
     const wc=w.getContext('2d');
-    wc.drawImage(s,0,0);wc.globalCompositeOperation='source-in';
+    wc.drawImage(base,0,0);wc.globalCompositeOperation='source-in';
     wc.fillStyle='#fff';wc.fillRect(0,0,w.width,w.height);
-    ZSPR[tp+(tp==='plaas'?t:'')]={cv:s,wht:w,r0:z.r,half};
+    /* LYFLIGTING — D2 se werklike reël: 'n hele graphic word deur EEN
+       puntmonster by sy voete verlig. Bak 'n donker tweeling per ligvlak by
+       opstart, kies met ligBy() by teken. Nul looptyd-tint, steeds EEN
+       drawImage per zombie. Die skermwye multiply val ook op die lyf, dus
+       tint ons net gedeeltelik (LV_K) sodat dit nie twee keer verdonker nie. */
+    const lv=[];
+    for(let q=0;q<LV_N;q++){
+      const k=q/(LV_N-1);                       // 0 = pikdonker, 1 = vol lig
+      const d=document.createElement('canvas');d.width=d.height=base.width;
+      const dc2=d.getContext('2d');
+      dc2.drawImage(base,0,0);
+      dc2.globalCompositeOperation='source-atop';
+      dc2.fillStyle='rgba(7,10,24,'+((1-k)*LV_K).toFixed(3)+')';
+      dc2.fillRect(0,0,d.width,d.height);
+      lv.push(d);
+    }
+    ZSPR[tp+(tp==='plaas'?t:'')]={cv:base,wht:w,lv,r0:z.r,half};
   }
+}
+/* Kies die gebakte ligvlak vir hierdie lyf uit die ligveld by sy voete. */
+function zLv(spr,z){
+  if(!spr.lv||!window.D2)return spr.cv;
+  const l=ligBy(z.x,z.y);
+  let q=(l.lum*(LV_N-1)+.5)|0;
+  if(q<0)q=0;else if(q>LV_N-1)q=LV_N-1;
+  return spr.lv[q];
 }
 function drawZombie(c,z){
   const px=G?G.x:z.x+1, py=G?G.y:z.y;
@@ -2806,14 +3007,28 @@ function drawZombie(c,z){
       c.beginPath();c.ellipse(0,z.r*.8,z.r*1.15,z.r*.45,0,0,TAU);c.stroke();c.globalAlpha=1;
     }
   }
+  /* DRUK-EN-REK. Die skaal word BUITE die rotasie toegepas — translate/scale
+     eerste, rotate laaste — sodat die druk altyd vertikaal op die skerm is en
+     nie saam met die kykrigting rondswaai nie. Anker by die voete (r*.8), want
+     'n middel-anker laat die lyf van sy kontakskadu af wegdryf. Die skadu self
+     word doelbewus NIE geskaal nie: dat hy stil bly is presies wat die wip
+     verkoop. Base is uitgesluit — hul stormloop het sy eie taal.             */
+  const amp=(z.type==='boss')?0:1, sn=Math.sin(z.gait||0)*amp;
+  /* Een plek waar die wip bereken word. Die tref-flits hieronder teken 'n wit
+     silhoeët van dieselfde lyf en MOET dieselfde transform kry, anders sit die
+     flits skeef op 'n gedrukte lyf. */
+  const wip=()=>{c.translate(0,z.r*.8);c.scale(1-sn*.05,1+sn*.07);c.translate(0,-z.r*.8);};
+  c.save();
+  wip();
   if(spr){
-    c.rotate(a);c.drawImage(spr.cv,-sprH,-sprH,sprH*2,sprH*2);c.rotate(-a);
+    c.rotate(a);c.drawImage(zLv(spr,z),-sprH,-sprH,sprH*2,sprH*2);c.rotate(-a);
     if(z.type==='bul'||z.type==='vlakvark'){const bd=zCols(z);drawZRest(c,z,a,bd[0],bd[1]);}
   }else{
     const bd=zCols(z);
     drawZTrunk(c,z,a,bd[0],bd[1]);
     drawZRest(c,z,a,bd[0],bd[1]);
   }
+  c.restore();
   if(z.stun>0){ // sterretjies
     c.fillStyle='#f2e2a0';
     for(let i=0;i<3;i++){
@@ -2837,6 +3052,7 @@ function drawZombie(c,z){
   }
   if(z.flash>0){ // tref-flits: volle wit silhoeët (G2-plan), nie net die lyf-ellips nie
     c.globalAlpha=Math.min(1,z.flash*9);
+    c.save();wip();                      // dieselfde wip as die lyf, anders sit die flits skeef
     if(spr){
       c.rotate(a);c.drawImage(spr.wht,-sprH,-sprH,sprH*2,sprH*2);c.rotate(-a);
       if(z.type==='bul'||z.type==='vlakvark')drawZRest(c,z,a,'#fff','#fff','#fff');
@@ -2844,6 +3060,7 @@ function drawZombie(c,z){
       drawZTrunk(c,z,a,'#fff','#fff');
       drawZRest(c,z,a,'#fff','#fff','#fff');
     }
+    c.restore();
     c.globalAlpha=1;
   }
   // gesondheid vir groot goed
@@ -2897,7 +3114,10 @@ function render(){
     camX=clamp(camX,0,Math.max(0,WORLD_W-VW));camY=clamp(camY,0,Math.max(0,WORLD_H-VH));
   }
   // rond die kamera af: 'n sub-pixel fase laat die hele wêreld flikker terwyl jy stap
-  camX=Math.round(camX);camY=Math.round(camY);
+  // Rond na 'n VEELVOUD VAN 2 af, nie na 1 nie. Die bak word by camX*BGS (BGS=.5)
+  // gemonster, so 'n onewe camX land op 'n halwe teksel en die bilineêre fase flip
+  // elke tweede wêreldpixel — dit is die res van die stapflikker wat oorgebly het.
+  camX=Math.round(camX/2)*2;camY=Math.round(camY/2)*2;
   ctx.drawImage(bg,camX*BGS,camY*BGS,VW*BGS,VH*BGS,0,0,VW,VH);
   if(!G){ctx.fillStyle='rgba(10,14,7,.2)';ctx.fillRect(0,0,VW,VH);ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);return;}
   const na=nightAlpha();
@@ -3184,6 +3404,7 @@ function render(){
   ctx.globalAlpha=1;
   ctx.restore();
   // nag: donkerte met lanternlig
+  lgOn=false;
   if(na>.01){
     const dc=darkCtx;
     dc.globalCompositeOperation='source-over';
@@ -3212,28 +3433,75 @@ function render(){
       if(g.x<camX-14||g.x>camX+VW+14||g.y<camY-14||g.y>camY+VH+14)continue;
       lights.push({x:g.x,y:g.y,r:24,c:L_GEM});
     }
-    for(const l of lights){
-      const sx=l.x-camX,sy=l.y-camY;
-      if(sx<-l.r||sx>VW+l.r||sy<-l.r||sy>VH+l.r)continue;
-      l.sx=sx;l.sy=sy;l.on=1;
-      dc.drawImage(lightSpr,sx-l.r,sy-l.r,l.r*2,l.r*2);
-    }
-    ctx.globalAlpha=na;ctx.drawImage(darkCv,0,0,VW,VH);ctx.globalAlpha=1;
-    /* Gekleurde lig BO-OP die donkerte: die masker onthul net, hierdie gooi kleur.
-       Een ekstra doek, een 'lighter' blit — dit is die hele D2-truuk.            */
     if(window.D2){
-      const wc=warmCtx;
-      wc.globalCompositeOperation='source-over';
-      wc.clearRect(0,0,VW,VH);
-      wc.globalCompositeOperation='lighter';
+      /* ---- LIGVELD ---- bou die rooster, blit dit een keer met MULTIPLY.
+         Multiply, nie source-over nie: source-over bereken lerp(toneel,tint,na)
+         en maak 'n SWART pixel LIGTER (by na=.9 word swart rgb(4,6,18)), wat
+         kontras pletter en soos mis lees. Multiply verdiep swart korrek.      */
+      const n=nightRGB();
+      // omgewing: wit by dag (multiply = geen effek), nagkleur teen volle nag
+      const aR=255+(n[0]-255)*na, aG=255+(n[1]-255)*na, aB=255+(n[2]-255)*na;
+      for(let i=0,L=lgW*lgH;i<L;i++){lgBuf[i*3]=aR;lgBuf[i*3+1]=aG;lgBuf[i*3+2]=aB;}
       for(const l of lights){
-        if(!l.on)continue;
-        wc.drawImage(l.c||L_LANTERN,l.sx-l.r,l.sy-l.r,l.r*2,l.r*2);
+        const sx=l.x-camX, sy=l.y-camY;
+        if(sx<-l.r||sx>VW+l.r||sy<-l.r||sy>VH+l.r)continue;
+        l.sx=sx;l.sy=sy;l.on=1;
+        const col=l.c&&l.c.rgb?l.c.rgb:[255,196,124];
+        const pw=(l.c&&l.c.p)||1;   // die krag sit op die ligdoek, nie op die liginskrywing nie
+        const inv=64/(l.r*l.r);
+        const c0=Math.max(0,((sx-l.r)/LG|0)), c1=Math.min(lgW-1,((sx+l.r)/LG|0)+2);
+        const r0=Math.max(0,((sy-l.r)/LG|0)), r1=Math.min(lgH-1,((sy+l.r)/LG|0)+2);
+        for(let cy=r0;cy<=r1;cy++){
+          const wy=cy*LG-LG*.5, dy=wy-sy;
+          for(let cx=c0;cx<=c1;cx++){
+            const wx=cx*LG-LG*.5, dx=wx-sx;
+            const q=(dx*dx+dy*dy)*inv;
+            if(q>=64)continue;
+            let k=FALL[q|0];
+            // band + dither, sodat die val TRAPPE het soos D2 s'n
+            k=Math.max(0,Math.round(k*BANDS+BAYER[((cy&3)<<2)|(cx&3)]*BANDS)/BANDS);
+            if(k<=0)continue;
+            const o=(cx+cy*lgW)*3, g=k*na*pw;
+            lgBuf[o]+=col[0]*g; lgBuf[o+1]+=col[1]*g; lgBuf[o+2]+=col[2]*g;
+          }
+        }
       }
+      lgCamX=camX;lgCamY=camY;lgOn=true;
+      const px=lgImg.data;
+      for(let i=0,L=lgW*lgH;i<L;i++){
+        const o=i*3, q=i*4;
+        px[q]=lgBuf[o]>255?255:lgBuf[o];
+        px[q+1]=lgBuf[o+1]>255?255:lgBuf[o+1];
+        px[q+2]=lgBuf[o+2]>255?255:lgBuf[o+2];
+        px[q+3]=255;
+      }
+      lgCtx.putImageData(lgImg,0,0);
+      ctx.globalCompositeOperation='multiply';
+      ctx.drawImage(lgCv,0,0,lgW,lgH,-LG,-LG,lgW*LG,lgH*LG);
+      ctx.globalCompositeOperation='source-over';
+      /* Emissiewes NA die multiply — anders word 'n vuur saam met die grond
+         verdonker, en 'n donker vuur om middernag lees onmiddellik as verkeerd. */
       ctx.globalCompositeOperation='lighter';
-      ctx.globalAlpha=Math.min(1,na*.9);
-      ctx.drawImage(warmCv,0,0,VW,VH);
-      ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
+      for(const f of G.fires){
+        const fx=f.x-camX,fy=f.y-camY;
+        if(fx<-40||fx>VW+40||fy<-40||fy>VH+40)continue;
+        ctx.fillStyle='rgba(255,120,34,'+(0.30*na).toFixed(2)+')';
+        ctx.beginPath();ctx.arc(fx,fy,(f.r||16)*1.5,0,TAU);ctx.fill();
+      }
+      if(G.power)for(const L2 of HOME_LIGHTS){
+        const fx=L2.x-camX,fy=L2.y-camY;
+        if(fx<-30||fx>VW+30||fy<-30||fy>VH+30)continue;
+        ctx.fillStyle='rgba(255,150,60,'+(0.34*na).toFixed(2)+')';
+        ctx.beginPath();ctx.arc(fx,fy,9,0,TAU);ctx.fill();
+      }
+      ctx.globalCompositeOperation='source-over';
+    }else{
+      for(const l of lights){
+        const sx=l.x-camX,sy=l.y-camY;
+        if(sx<-l.r||sx>VW+l.r||sy<-l.r||sy>VH+l.r)continue;
+        dc.drawImage(lightSpr,sx-l.r,sy-l.r,l.r*2,l.r*2);
+      }
+      ctx.globalAlpha=na;ctx.drawImage(darkCv,0,0,VW,VH);ctx.globalAlpha=1;
     }
     // gloeiende oë in die donker
     if(na>.4&&!LOWFX){
@@ -3252,14 +3520,18 @@ function render(){
   /* Kleurgradering: D2 se handtekening is ontversadigde middeltone met koue
      skaduwees en warm hooglig. Twee volskerm-blits, geen filter, geen per-pixel. */
   if(window.D2){
+    // Die gradering moet met die NAG opkom. Voorheen het dit vol krag by na=0
+    // geloop en die eerste 150 sekondes van elke lopie verniet ontversadig.
     const na2=nightAlpha();
-    ctx.globalCompositeOperation='multiply';
-    ctx.fillStyle='rgba(196,198,214,'+(0.30+na2*0.30).toFixed(2)+')';   // druk die middeltone af, koel hulle
-    ctx.fillRect(0,0,VW,VH);
-    ctx.globalCompositeOperation='overlay';
-    ctx.fillStyle='rgba(150,116,74,'+(0.16+na2*0.14).toFixed(2)+')';    // sit die warmte in die hooglig terug
-    ctx.fillRect(0,0,VW,VH);
-    ctx.globalCompositeOperation='source-over';
+    if(na2>.02){
+      ctx.globalCompositeOperation='multiply';
+      ctx.fillStyle='rgba(196,198,214,'+(0.08+na2*0.34).toFixed(3)+')';  // druk die middeltone af, koel hulle
+      ctx.fillRect(0,0,VW,VH);
+      ctx.globalCompositeOperation='overlay';
+      ctx.fillStyle='rgba(150,116,74,'+(0.04+na2*0.18).toFixed(3)+')';   // sit die warmte in die hooglig terug
+      ctx.fillRect(0,0,VW,VH);
+      ctx.globalCompositeOperation='source-over';
+    }
   }
   ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);
   drawHUD();
