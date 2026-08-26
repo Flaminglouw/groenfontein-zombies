@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="af">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Ontspan — Geen Zombies</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+:root{
+  --bg:#131a10; --panel:#1b2415; --panel2:#222c19; --line:#5c4a2e;
+  --ink:#ece5cc; --gold:#e0b64f; --red:#c05038; --dim:#9aa07f; --green:#7fc95e;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:#04070a;color:var(--ink);font-family:'VT323',ui-monospace,Menlo,monospace;overflow:hidden;-webkit-user-select:none;user-select:none}
+#cv{position:fixed;inset:0;display:block;touch-action:none}
+.screen{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(4,7,10,.78);z-index:10;overflow:auto;padding:20px}
+.screen.on{display:flex}
+.panel{background:var(--panel);border:3px solid var(--line);box-shadow:0 0 0 3px #0a0e07,0 14px 44px rgba(0,0,0,.65);padding:26px 30px;max-width:900px;width:100%;text-align:center;margin:auto}
+h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-size:clamp(15px,3.4vw,26px);line-height:1.5;letter-spacing:1px;text-shadow:3px 3px 0 #000}
+.sub{font-family:'Press Start 2P',ui-monospace,monospace;font-size:clamp(9px,1.8vw,13px);color:var(--red);margin-top:10px;letter-spacing:2px;text-shadow:2px 2px 0 #000}
+.hint{margin-top:14px;font-size:17px;color:var(--dim);line-height:1.4;max-width:64ch;margin-left:auto;margin-right:auto}
+.btn{display:inline-block;font-family:'VT323',monospace;font-size:22px;letter-spacing:2px;background:var(--panel2);color:var(--gold);border:3px solid var(--gold);padding:8px 22px;margin:8px 6px 0;cursor:pointer;text-transform:uppercase;text-decoration:none}
+.btn:hover,.btn:focus-visible{background:var(--gold);color:#131a10;outline:none}
+.btn.ghost{border-color:var(--line);color:var(--dim);font-size:18px}
+.btn.ghost:hover,.btn.ghost:focus-visible{background:var(--line);color:var(--ink)}
+.maps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:18px}
+.mapcard{background:var(--panel2);border:3px solid var(--line);padding:14px 10px;cursor:pointer;text-align:center}
+.mapcard:hover,.mapcard:focus-visible{border-color:var(--gold);outline:none}
+.mapcard h3{font-family:'Press Start 2P',monospace;font-size:11px;color:var(--gold);margin-bottom:6px;letter-spacing:1px}
+.mapcard p{font-size:15px;color:var(--dim)}
+#topbar{position:fixed;top:0;left:0;right:0;z-index:5;display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(4,8,12,.72);border-bottom:1px solid rgba(120,150,130,.18);font-size:16px;flex-wrap:wrap;backdrop-filter:blur(2px)}
+#topbar .spacer{flex:1}
+#topbar a,#topbar button{font-family:'VT323',monospace;font-size:16px;background:rgba(20,30,26,.6);color:var(--gold);border:1px solid rgba(120,150,130,.3);padding:4px 12px;cursor:pointer;text-decoration:none}
+#topbar a:hover,#topbar button:hover{border-color:var(--gold);color:var(--ink)}
+#topbar label{display:flex;align-items:center;gap:5px;color:var(--dim)}
+#mapName{color:var(--dim)}
+#winlose{color:var(--gold);font-family:'Press Start 2P',monospace;font-size:12px}
+</style>
+</head>
+<body>
+
+<canvas id="cv"></canvas>
+
+<div id="topbar" style="display:none">
+  <a href="index.html">&larr; Terug na die plaas</a>
+  <button id="bMapList">Kaarte</button>
+  <button id="bReset">Herbegin</button>
+  <button id="bGetalle">Getalle: AF</button>
+  <label><input type="checkbox" id="cDemo"> Demo (bots speel alleen)</label>
+  <span class="spacer"></span>
+  <span id="mapName"></span>
+  <span id="winlose"></span>
+</div>
+
+<div class="screen on" id="scrMaps"><div class="panel">
+  <h1>ONTSPAN</h1>
+  <div class="sub">GEEN ZOMBIES — KIES 'N KAART</div>
+  <p class="hint"><b>Klik</b> 'n eie son = kies hom. <b>Dubbelklik</b> (of <b>A</b>) = kies ALMAL.
+    Die volgende klik is die bevel: 'n vyand se son = val aan, jou eie son = versterk, of
+    <b>oop ruimte = parkeer die swerm daar</b> — hy wag as 'n vry wolk wat jy later weer kan kies
+    en stuur. <b>Trek 'n kring</b> om sonne/wolke om 'n groep te kies. Elke bevel stuur ALLES.
+    <b>VERBETER:</b> pomp 100 ekstra eenhede bo die maksimum in 'n eie son in (kyk die wit boog
+    vul) en hy vlak op — groter, vinniger, tot vlak 3. Verower elke ander kleur om te wen.</p>
+  <button class="btn" id="bResume" style="display:none">Terug na die spel</button>
+  <div class="maps" id="mapGrid"></div>
+  <a class="btn ghost" href="index.html" style="margin-top:18px">&larr; Terug na die plaas</a>
+</div></div>
+
+<div class="screen" id="scrEnd"><div class="panel" style="max-width:480px">
+  <h1 id="endTitle">WEN!</h1>
+  <p class="hint" id="endSub"></p>
+  <button class="btn" id="bAgain">Speel Weer</button>
+  <button class="btn ghost" id="bToMaps">Kies 'n Ander Kaart</button>
+</div></div>
+
+<script>
+'use strict';
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const VW=1000,VH=600;
+let scale=1,offX=0,offY=0;
+function resize(){
+  if(!innerWidth||!innerHeight) return; // background tab: 0x0 viewport, keep last-good transform
+  cv.width=Math.round(innerWidth*devicePixelRatio); cv.height=Math.round(innerHeight*devicePixelRatio);
+  cv.style.width=innerWidth+'px'; cv.style.height=innerHeight+'px';
+  scale=Math.min(innerWidth/VW,innerHeight/VH);
+  offX=(innerWidth-VW*scale)/2; offY=(innerHeight-VH*scale)/2;
+  paintBG(Math.min(3,Math.max(1,scale*devicePixelRatio)));
+}
+addEventListener('resize',resize);
+function toVirtual(px,py){return [(px-offX)/scale, (py-offY)/scale];}
+
+const PLAYER='player';
+const OWNER_COLOR={player:'#6fe08a',bot1:'#ff6a4d',bot2:'#5db8ff',bot3:'#c07bff',neutral:'#8a917f'};
+
+// ---------- sprites (pre-rendered radial gradients; drawn additively) ----------
+function hexRGB(h){return [parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];}
+function rgba(h,a){const c=hexRGB(h);return `rgba(${c[0]},${c[1]},${c[2]},${a})`;}
+function makeSprite(sz,stops){
+  const c=document.createElement('canvas'); c.width=c.height=sz;
+  const g=c.getContext('2d');
+  const gr=g.createRadialGradient(sz/2,sz/2,0,sz/2,sz/2,sz/2);
+  for(const s of stops) gr.addColorStop(s[0],s[1]);
+  g.fillStyle=gr; g.fillRect(0,0,sz,sz);
+  return c;
+}
+const SPR={};
+for(const own in OWNER_COLOR){
+  const col=OWNER_COLOR[own];
+  const dim=own==='neutral';
+  SPR[own]={
+    glow: makeSprite(128,[[0,rgba(col,dim?.3:.5)],[.4,rgba(col,dim?.08:.15)],[1,rgba(col,0)]]),
+    core: makeSprite(128,[[0,`rgba(255,255,255,${dim?.7:.95})`],[.15,rgba(col,.95)],[.45,rgba(col,.35)],[1,rgba(col,0)]]),
+    dot:  makeSprite(32,[[0,`rgba(255,255,255,${dim?.5:.95})`],[.18,rgba(col,dim?.55:.95)],[.55,rgba(col,dim?.2:.35)],[1,rgba(col,0)]]),
+  };
+}
+const WGLOW=makeSprite(128,[[0,'rgba(255,255,255,.95)'],[.3,'rgba(255,255,255,.45)'],[1,'rgba(255,255,255,0)']]);
+function blit(img,x,y,size,alpha){
+  if(alpha!==undefined) ctx.globalAlpha=alpha;
+  ctx.drawImage(img,x-size/2,y-size/2,size,size);
+  if(alpha!==undefined) ctx.globalAlpha=1;
+}
+
+// ---------- starfield + nebula background (data fixed once; repainted at display resolution) ----------
+const NEBS=['#143526','#102338','#241536','#143526','#102338','#241536'].map(col=>({
+  col, x:Math.random()*VW, y:Math.random()*VH, r:160+Math.random()*220}));
+const STARS=Array.from({length:180},()=>({x:Math.random()*VW,y:Math.random()*VH,
+  r:.3+Math.random()*1.1, cr:220+Math.random()*35|0, cg:225+Math.random()*30|0, a:.12+Math.random()*.55}));
+const GLINTS=Array.from({length:14},()=>({x:Math.random()*VW,y:Math.random()*VH,r:6+Math.random()*10}));
+const BG=document.createElement('canvas');
+let bgQ=0;
+function paintBG(q){
+  if(Math.abs(q-bgQ)<0.01) return; bgQ=q;
+  BG.width=Math.round(VW*q); BG.height=Math.round(VH*q);
+  const g=BG.getContext('2d');
+  g.scale(q,q);
+  g.fillStyle='#04070a'; g.fillRect(0,0,VW,VH);
+  g.globalCompositeOperation='lighter';
+  for(const n of NEBS){
+    const gr=g.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r);
+    gr.addColorStop(0,rgba(n.col,.4)); gr.addColorStop(1,rgba(n.col,0));
+    g.fillStyle=gr; g.fillRect(n.x-n.r,n.y-n.r,n.r*2,n.r*2);
+  }
+  for(const s of STARS){
+    g.fillStyle=`rgba(${s.cr},${s.cg},255,${s.a})`;
+    g.beginPath(); g.arc(s.x,s.y,s.r,0,7); g.fill();
+  }
+  for(const s of GLINTS){
+    const gr=g.createRadialGradient(s.x,s.y,0,s.x,s.y,s.r);
+    gr.addColorStop(0,'rgba(255,255,255,.5)'); gr.addColorStop(.25,'rgba(200,220,255,.12)'); gr.addColorStop(1,'rgba(200,220,255,0)');
+    g.fillStyle=gr; g.fillRect(s.x-s.r,s.y-s.r,s.r*2,s.r*2);
+  }
+}
+resize();
+
+// ---------- maps (unchanged from v1) ----------
+const MAPS=[
+{name:'Eerste Stappe',bots:['bot1'],aiInterval:1.6,aiMargin:1.25,nodes:[
+  {x:80,y:300,cap:100,owner:'player',start:60},
+  {x:920,y:300,cap:100,owner:'bot1',start:60},
+  {x:300,y:150,cap:40,owner:'neutral',start:20},
+  {x:300,y:450,cap:40,owner:'neutral',start:20},
+  {x:500,y:300,cap:50,owner:'neutral',start:25,lvl:2},
+  {x:700,y:150,cap:40,owner:'neutral',start:20},
+  {x:700,y:450,cap:40,owner:'neutral',start:20},
+]},
+{name:'Noord-Suid',bots:['bot1'],aiInterval:1.5,aiMargin:1.25,nodes:[
+  {x:500,y:60,cap:100,owner:'player',start:60},
+  {x:500,y:540,cap:100,owner:'bot1',start:60},
+  {x:200,y:180,cap:35,owner:'neutral',start:15},
+  {x:800,y:180,cap:35,owner:'neutral',start:15},
+  {x:200,y:420,cap:35,owner:'neutral',start:15},
+  {x:800,y:420,cap:35,owner:'neutral',start:15},
+  {x:350,y:300,cap:45,owner:'neutral',start:20},
+  {x:650,y:300,cap:45,owner:'neutral',start:20},
+]},
+{name:'Vier Windrigtings',bots:['bot1'],aiInterval:1.4,aiMargin:1.2,nodes:[
+  {x:80,y:300,cap:100,owner:'player',start:60},
+  {x:920,y:300,cap:100,owner:'bot1',start:62},
+  {x:500,y:80,cap:40,owner:'neutral',start:20},
+  {x:500,y:520,cap:40,owner:'neutral',start:20},
+  {x:300,y:300,cap:35,owner:'neutral',start:15},
+  {x:700,y:300,cap:35,owner:'neutral',start:15},
+  {x:500,y:300,cap:60,owner:'neutral',start:30},
+  {x:350,y:150,cap:30,owner:'neutral',start:12},
+  {x:650,y:450,cap:30,owner:'neutral',start:12},
+]},
+{name:'Twee Teen Een',bots:['bot1','bot2'],aiInterval:1.5,aiMargin:1.25,nodes:[
+  {x:150,y:300,cap:110,owner:'player',start:70},
+  {x:850,y:150,cap:90,owner:'bot1',start:55},
+  {x:850,y:450,cap:90,owner:'bot2',start:55},
+  {x:400,y:150,cap:40,owner:'neutral',start:18},
+  {x:400,y:450,cap:40,owner:'neutral',start:18},
+  {x:550,y:300,cap:55,owner:'neutral',start:25,lvl:2},
+  {x:700,y:300,cap:45,owner:'neutral',start:20},
+  {x:300,y:300,cap:35,owner:'neutral',start:15},
+  {x:600,y:120,cap:30,owner:'neutral',start:12},
+  {x:600,y:480,cap:30,owner:'neutral',start:12},
+]},
+{name:'Skuiling',bots:['bot1','bot2'],aiInterval:1.4,aiMargin:1.2,nodes:[
+  {x:100,y:300,cap:100,owner:'player',start:60},
+  {x:900,y:120,cap:90,owner:'bot1',start:55},
+  {x:900,y:480,cap:90,owner:'bot2',start:55},
+  {x:500,y:300,cap:80,owner:'neutral',start:45,lvl:2},
+  {x:400,y:220,cap:35,owner:'neutral',start:15},
+  {x:600,y:220,cap:35,owner:'neutral',start:15},
+  {x:400,y:380,cap:35,owner:'neutral',start:15},
+  {x:600,y:380,cap:35,owner:'neutral',start:15},
+  {x:250,y:300,cap:30,owner:'neutral',start:12},
+  {x:750,y:300,cap:30,owner:'neutral',start:12},
+]},
+{name:'Lang Grens',bots:['bot1','bot2'],aiInterval:1.3,aiMargin:1.2,nodes:[
+  {x:60,y:300,cap:100,owner:'player',start:60},
+  {x:940,y:150,cap:90,owner:'bot1',start:55},
+  {x:940,y:450,cap:90,owner:'bot2',start:55},
+  {x:220,y:300,cap:30,owner:'neutral',start:12},
+  {x:360,y:180,cap:30,owner:'neutral',start:12},
+  {x:360,y:420,cap:30,owner:'neutral',start:12},
+  {x:500,y:300,cap:45,owner:'neutral',start:20},
+  {x:640,y:180,cap:30,owner:'neutral',start:12},
+  {x:640,y:420,cap:30,owner:'neutral',start:12},
+  {x:780,y:300,cap:35,owner:'neutral',start:15},
+  {x:500,y:120,cap:25,owner:'neutral',start:10},
+  {x:500,y:480,cap:25,owner:'neutral',start:10},
+]},
+{name:'Hoekige Slag',bots:['bot1','bot2','bot3'],aiInterval:1.3,aiMargin:1.15,nodes:[
+  {x:500,y:300,cap:120,owner:'player',start:90},
+  {x:80,y:80,cap:85,owner:'bot1',start:50},
+  {x:920,y:80,cap:85,owner:'bot2',start:50},
+  {x:500,y:540,cap:85,owner:'bot3',start:50},
+  {x:500,y:80,cap:40,owner:'neutral',start:18},
+  {x:150,y:300,cap:35,owner:'neutral',start:15},
+  {x:850,y:300,cap:35,owner:'neutral',start:15},
+  {x:300,y:450,cap:30,owner:'neutral',start:12},
+  {x:700,y:450,cap:30,owner:'neutral',start:12},
+  {x:300,y:150,cap:30,owner:'neutral',start:12},
+  {x:700,y:150,cap:30,owner:'neutral',start:12},
+  {x:500,y:420,cap:30,owner:'neutral',start:12},
+]},
+{name:'Groot Sirkel',bots:['bot1','bot2','bot3'],aiInterval:1.25,aiMargin:1.15,nodes:[
+  {x:500,y:560,cap:100,owner:'player',start:60},
+  {x:500,y:40,cap:90,owner:'bot1',start:55},
+  {x:90,y:300,cap:85,owner:'bot2',start:50},
+  {x:910,y:300,cap:85,owner:'bot3',start:50},
+  {x:250,y:150,cap:30,owner:'neutral',start:12},
+  {x:750,y:150,cap:30,owner:'neutral',start:12},
+  {x:250,y:450,cap:30,owner:'neutral',start:12},
+  {x:750,y:450,cap:30,owner:'neutral',start:12},
+  {x:500,y:300,cap:55,owner:'neutral',start:25,lvl:2},
+  {x:150,y:450,cap:25,owner:'neutral',start:10},
+  {x:850,y:450,cap:25,owner:'neutral',start:10},
+  {x:150,y:150,cap:25,owner:'neutral',start:10},
+  {x:850,y:150,cap:25,owner:'neutral',start:10},
+  {x:500,y:470,cap:20,owner:'neutral',start:8},
+]},
+{name:'Digte Web',bots:['bot1','bot2','bot3'],aiInterval:1.1,aiMargin:1.1,nodes:[
+  {x:120,y:500,cap:100,owner:'player',start:60},
+  {x:880,y:500,cap:90,owner:'bot1',start:55},
+  {x:120,y:100,cap:90,owner:'bot2',start:55},
+  {x:880,y:100,cap:90,owner:'bot3',start:55},
+  {x:500,y:300,cap:70,owner:'neutral',start:35,lvl:2},
+  {x:350,y:220,cap:30,owner:'neutral',start:12},
+  {x:650,y:220,cap:30,owner:'neutral',start:12},
+  {x:350,y:380,cap:30,owner:'neutral',start:12},
+  {x:650,y:380,cap:30,owner:'neutral',start:12},
+  {x:250,y:300,cap:25,owner:'neutral',start:10},
+  {x:750,y:300,cap:25,owner:'neutral',start:10},
+  {x:500,y:150,cap:25,owner:'neutral',start:10},
+  {x:500,y:450,cap:25,owner:'neutral',start:10},
+  {x:400,y:500,cap:20,owner:'neutral',start:8},
+]},
+{name:'Eindbaas',bots:['bot1','bot2','bot3'],aiInterval:1.0,aiMargin:1.08,nodes:[
+  {x:500,y:540,cap:110,owner:'player',start:70},
+  {x:150,y:120,cap:120,owner:'bot1',start:80},
+  {x:850,y:120,cap:120,owner:'bot2',start:80},
+  {x:500,y:80,cap:120,owner:'bot3',start:80},
+  {x:300,y:300,cap:45,owner:'neutral',start:20},
+  {x:700,y:300,cap:45,owner:'neutral',start:20},
+  {x:500,y:300,cap:60,owner:'neutral',start:28,lvl:2},
+  {x:200,y:450,cap:30,owner:'neutral',start:12},
+  {x:800,y:450,cap:30,owner:'neutral',start:12},
+  {x:350,y:180,cap:30,owner:'neutral',start:12},
+  {x:650,y:180,cap:30,owner:'neutral',start:12},
+  {x:150,y:300,cap:25,owner:'neutral',start:10},
+  {x:850,y:300,cap:25,owner:'neutral',start:10},
+  {x:500,y:420,cap:35,owner:'neutral',start:15},
+  {x:300,y:150,cap:25,owner:'neutral',start:10},
+  {x:700,y:150,cap:25,owner:'neutral',start:10},
+]},
+{name:'Toets A-E',sandbox:true,bots:[],aiInterval:9,aiMargin:1.2,nodes:[
+  {x:110,y:300,cap:30,owner:'player',start:20,name:'A'},
+  {x:300,y:300,cap:50,owner:'player',start:35,name:'B'},
+  {x:500,y:300,cap:80,owner:'player',start:60,name:'C'},
+  {x:700,y:300,cap:120,owner:'player',start:90,name:'D'},
+  {x:890,y:300,cap:170,owner:'player',start:130,name:'E'},
+]},
+];
+
+let nodes=[],fleets=[],packs=[],FX=[],botIds=[],aiTimers={},curMap=-1,demoOn=false,ended=false,sel=[];
+let dragging=false,dragPid=null,lasso=[],T=0;
+let screenState='maps',endTimer=null;
+const FLEET_SPEED=150; // px/s in virtual space
+const UPGRADE_COST=100; // surplus units above cap consumed per planet level (max lvl 3)
+let showNums=false;
+
+// ---------- unit-swarm particles ----------
+function dotTarget(u){return Math.round(Math.min(140,Math.sqrt(Math.max(0,u))*9));}
+function sizeOf(n){return (8+Math.sqrt(n.baseCap)*1.5)*(1+0.35*(n.lvl-1));}
+function newDot(){return {a:Math.random()*7,av:(0.1+Math.random()*0.4)*(Math.random()<.5?-1:1),
+  rr:Math.random(),wx:Math.random()*7,wy:Math.random()*7,fx:.5+Math.random()*1.2,fy:.5+Math.random()*1.2,
+  sz:.8+Math.random()*.5};}
+function syncDots(n){
+  const t=dotTarget(n.units);
+  while(n.dots.length<t) n.dots.push(newDot());
+  if(n.dots.length>t) n.dots.length=t;
+}
+function bandOf(n){return 14+n.dots.length*0.35;}
+
+function initMap(idx){
+  curMap=idx; ended=false; sel=[]; fleets=[]; packs=[]; FX=[]; cancelDrag();
+  const m=MAPS[idx];
+  nodes=m.nodes.map((n,i)=>{
+    const lvl=n.lvl||1;
+    const node={id:i,x:n.x,y:n.y,baseCap:n.cap,lvl,cap:Math.round(n.cap*(1+0.5*(lvl-1))),
+      owner:n.owner,units:n.start,name:n.name,dots:[],ph:Math.random()*7};
+    node.coreR=sizeOf(node);
+    return node;
+  });
+  nodes.forEach(syncDots);
+  botIds=m.bots.slice();
+  aiTimers={}; aiIdle={}; botIds.forEach(b=>aiTimers[b]=Math.random()*m.aiInterval);
+  document.getElementById('mapName').textContent=m.name;
+  document.getElementById('winlose').textContent='';
+  document.getElementById('cDemo').checked=false; demoOn=false;
+  show('game');
+}
+
+function show(which){
+  if(which!=='end'&&endTimer){ clearTimeout(endTimer); endTimer=null; }
+  screenState=which;
+  document.getElementById('scrMaps').classList.toggle('on',which==='maps');
+  document.getElementById('scrEnd').classList.toggle('on',which==='end');
+  document.getElementById('topbar').style.display=which==='game'?'flex':'none';
+}
+
+function buildMapGrid(){
+  const g=document.getElementById('mapGrid'); g.innerHTML='';
+  MAPS.forEach((m,i)=>{
+    const c=document.createElement('div'); c.className='mapcard'; c.tabIndex=0;
+    c.setAttribute('role','button');
+    c.innerHTML=`<h3>${i+1}. ${m.name}</h3><p>${m.bots.length} bot${m.bots.length>1?'s':''} · ${m.nodes.length} planete</p>`;
+    c.onclick=()=>initMap(i);
+    c.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); initMap(i); } };
+    g.appendChild(c);
+  });
+}
+buildMapGrid();
+
+function spawnFleet(src,dst,units,owner){
+  const dist=Math.hypot(dst.x-src.x,dst.y-src.y);
+  const cnt=Math.max(4,Math.min(42,Math.round(units*0.8)));
+  const dots=[];
+  for(let i=0;i<cnt;i++) dots.push({lag:0.02+Math.random()*0.13,perp:(Math.random()+Math.random()-1)*10,
+    wp:Math.random()*7,ws:2+Math.random()*4,sz:.7+Math.random()*.7});
+  fleets.push({owner,from:{x:src.x,y:src.y},toId:(typeof dst.id==='number'&&!dst.isPack)?dst.id:null,
+    tx:dst.x,ty:dst.y,units,progress:0,dist:Math.max(1,dist),dots});
+}
+
+function sendFromSelection(target){
+  for(const n of sel){
+    if(n===target||n.owner!==PLAYER) continue;
+    const amt=n.units;
+    if(amt<1) continue;
+    n.units-=amt;
+    spawnFleet(n,target,amt,PLAYER);
+  }
+  packs=packs.filter(p=>p.units>=1);
+  sel=sel.filter(e=>!e.isPack||e.units>=1);
+}
+
+let aiIdle={};
+function botThink(bot,margin){
+  const mine=nodes.filter(n=>n.owner===bot&&n.units>6);
+  if(!mine.length) return;
+  let acted=false;
+  const inbound={};
+  for(const f of fleets) if(f.owner===bot) inbound[f.toId]=(inbound[f.toId]||0)+f.units;
+  for(const src of mine){
+    let best=null,bestScore=-Infinity,bestNeed=0;
+    for(const t of nodes){
+      if(t===src||t.owner===bot) continue;
+      const eff=t.units-(inbound[t.id]||0);
+      if(eff<0) continue;
+      const dist=Math.hypot(t.x-src.x,t.y-src.y);
+      const needed=eff*margin+3;
+      if(src.units*0.7<needed) continue;
+      const score=1/(dist+1)*(1/(eff+1));
+      if(score>bestScore){bestScore=score;best=t;bestNeed=needed;}
+    }
+    if(best){
+      const send=Math.min(src.units*0.7,bestNeed+10);
+      if(send>3){ src.units-=send; spawnFleet(src,best,send,bot); inbound[best.id]=(inbound[best.id]||0)+send; acted=true; }
+    } else if(src.units>=src.cap*0.9){
+      // nothing attackable from here: feed the frontline (nearest friendly planet closer to the enemy)
+      let ne=null,ned=Infinity;
+      for(const t of nodes){
+        if(t.owner!==bot&&t.owner!=='neutral'){
+          const d=Math.hypot(t.x-src.x,t.y-src.y);
+          if(d<ned){ ned=d; ne=t; }
+        }
+      }
+      if(ne){
+        let ff=null,ffd=Infinity;
+        for(const t of nodes){
+          if(t!==src&&t.owner===bot){
+            const de=Math.hypot(t.x-ne.x,t.y-ne.y);
+            if(de<ned-1&&de<ffd){ ffd=de; ff=t; }
+          }
+        }
+        if(ff){ const send=src.units*0.6; src.units-=send; spawnFleet(src,ff,send,bot); acted=true; }
+      }
+    }
+  }
+  // anti-turtle: after 8 idle thinks, launch a combined all-out wave at the weakest target —
+  // single planets can't beat entrenched defenders alone, so coordinate the whole faction
+  if(acted){ aiIdle[bot]=0; }
+  else {
+    aiIdle[bot]=(aiIdle[bot]||0)+1;
+    if(aiIdle[bot]>=8){
+      let best=null,bs=-Infinity;
+      for(const t of nodes){
+        if(t.owner===bot) continue;
+        const s=1/(t.units+1);
+        if(s>bs){ bs=s; best=t; }
+      }
+      if(best){
+        for(const src of mine){
+          const send=src.units*0.7;
+          if(send>2){ src.units-=send; spawnFleet(src,best,send,bot); }
+        }
+        aiIdle[bot]=0;
+      }
+    }
+  }
+}
+
+function checkEnd(){
+  if(ended||MAPS[curMap].sandbox) return;
+  const alive=own=>nodes.some(n=>n.owner===own)||fleets.some(f=>f.owner===own)||packs.some(p=>p.owner===own);
+  const factions=[PLAYER].concat(botIds).filter(alive);
+  if(demoOn){ if(factions.length<=1) endGame(factions[0]===PLAYER); }
+  else if(!alive(PLAYER)) endGame(false);
+  else if(factions.length===1) endGame(true);
+}
+function endGame(won){
+  ended=true;
+  document.getElementById('winlose').textContent=won?'GEWEN!':'VERLOOR';
+  document.getElementById('endTitle').textContent=won?'JY HET GEWEN!':'JY HET VERLOOR';
+  document.getElementById('endSub').textContent=won?
+    'Elke ander kleur is verower. Goed gedoen.':
+    'Al jou planete is oorgeneem. Probeer weer.';
+  endTimer=setTimeout(()=>{ endTimer=null; show('end'); },900);
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  T+=dt;
+  if(cv.width!==Math.round(innerWidth*devicePixelRatio)||cv.height!==Math.round(innerHeight*devicePixelRatio)) resize();
+  if(screenState==='game' && !ended){
+    update(dt);
+  }
+  for(const f of FX) f.t+=dt;
+  FX=FX.filter(f=>f.t<f.dur);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function update(dt){
+  for(const n of nodes){
+    if(n.owner!=='neutral'&&n.units<n.cap){
+      // production scales with level: lvl2 = double, lvl3 = triple
+      n.units=Math.min(n.cap, n.units + (2+n.baseCap*0.05)*n.lvl*dt);
+    }
+    syncDots(n);
+    for(const d of n.dots) d.a+=d.av*dt;
+  }
+  for(const p of packs){
+    syncDots(p);
+    for(const d of p.dots) d.a+=d.av*dt;
+  }
+  for(const f of fleets){
+    f.progress += (FLEET_SPEED*dt)/Math.max(1,f.dist);
+  }
+  const arrived=fleets.filter(f=>f.progress>=1);
+  fleets=fleets.filter(f=>f.progress<1);
+  for(const f of arrived){
+    if(f.toId===null){
+      // parked in open space: merge into a nearby friendly pack or form a new one
+      let pk=packs.find(p=>p.owner===f.owner&&Math.hypot(p.x-f.tx,p.y-f.ty)<40);
+      if(!pk){ pk={isPack:true,owner:f.owner,x:f.tx,y:f.ty,units:0,dots:[],ph:Math.random()*7,coreR:5}; packs.push(pk); }
+      pk.units+=f.units;
+      FX.push({kind:'burst',x:f.tx,y:f.ty,t:0,dur:.35,colHex:OWNER_COLOR[f.owner],spr:SPR[f.owner],r1:8+Math.sqrt(f.units)*3});
+      continue;
+    }
+    const t=nodes[f.toId];
+    if(t.owner===f.owner){ t.units+=f.units; }
+    else {
+      t.units-=f.units;
+      if(t.units<0){
+        t.owner=f.owner; t.units=Math.max(1,-t.units);
+        FX.push({kind:'cap',x:t.x,y:t.y,t:0,dur:.9,colHex:OWNER_COLOR[f.owner],spr:SPR[f.owner],r1:t.coreR*3.4});
+      }
+    }
+    FX.push({kind:'burst',x:t.x,y:t.y,t:0,dur:.45,colHex:OWNER_COLOR[f.owner],spr:SPR[f.owner],r1:10+Math.sqrt(f.units)*4});
+  }
+  for(const n of nodes){
+    while(n.owner!=='neutral' && n.lvl<3 && n.units>=n.cap+UPGRADE_COST){
+      n.units-=UPGRADE_COST; n.lvl++;
+      n.cap=Math.round(n.baseCap*(1+0.5*(n.lvl-1)));
+      n.coreR=sizeOf(n);
+      FX.push({kind:'cap',x:n.x,y:n.y,t:0,dur:.9,colHex:OWNER_COLOR[n.owner],spr:SPR[n.owner],r1:n.coreR*3.8});
+      FX.push({kind:'flash',x:n.x,y:n.y,t:0,dur:.65,colHex:'#ffffff',spr:{glow:WGLOW},r1:n.coreR*2.6});
+    }
+  }
+  if(sel.length) sel=sel.filter(e=>e.owner===PLAYER&&(!e.isPack||e.units>=1));
+  const bots=demoOn? botIds.concat([PLAYER]) : botIds;
+  for(const b of bots){
+    const interval=MAPS[curMap].aiInterval, margin=MAPS[curMap].aiMargin;
+    if(aiTimers[b]===undefined) aiTimers[b]=Math.random()*interval; // demo player gets the same random opening delay as the bots
+    aiTimers[b]-=dt;
+    if(aiTimers[b]<=0){ aiTimers[b]=interval*(0.85+Math.random()*0.3); botThink(b,margin); }
+  }
+  checkEnd();
+}
+
+function render(){
+  ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,innerWidth,innerHeight);
+  ctx.save();
+  ctx.translate(offX,offY); ctx.scale(scale,scale);
+  ctx.beginPath(); ctx.rect(0,0,VW,VH); ctx.clip();
+  if(screenState==='maps'||!nodes.length){ ctx.drawImage(BG,0,0,VW,VH); ctx.restore(); return; }
+  // in-game field is pure black, Auralux-style; the starfield stays on the menu backdrop
+
+  // additive pass: glows, swarms, streams, effect flashes
+  ctx.globalCompositeOperation='lighter';
+  for(const n of nodes){
+    const s=SPR[n.owner], r=n.coreR;
+    const full=n.units>=n.cap;
+    const pulse=1+Math.sin(T*1.6+n.ph)*0.04+(full?Math.sin(T*3+n.ph)*0.05:0);
+    blit(s.glow,n.x,n.y,r*4.6*pulse,.8);
+    blit(s.core,n.x,n.y,r*2.0*pulse);
+    if(n.lvl>1){
+      // thick soft halo rings for levelled suns
+      ctx.strokeStyle='rgba(190,200,210,.09)';
+      ctx.lineWidth=r*.42;
+      ctx.beginPath(); ctx.arc(n.x,n.y,r*1.6,0,7); ctx.stroke();
+      if(n.lvl>2){
+        ctx.lineWidth=r*.3;
+        ctx.beginPath(); ctx.arc(n.x,n.y,r*1.95,0,7); ctx.stroke();
+      }
+    }
+    if(n.owner!=='neutral'&&n.lvl<3&&n.units>n.cap){
+      // the planet visibly fills white as the upgrade surplus builds
+      const frac=Math.min(1,(n.units-n.cap)/UPGRADE_COST);
+      blit(WGLOW,n.x,n.y,r*(1.2+frac*1.1),.2+.6*frac);
+    }
+    if(n.owner!=='neutral'){
+      // corona rays: the living-sun look
+      const rays=12, rot=T*0.18+n.ph;
+      ctx.strokeStyle=rgba(OWNER_COLOR[n.owner],.22); ctx.lineWidth=1.4;
+      ctx.beginPath();
+      for(let i=0;i<rays;i++){
+        const a=rot+i*Math.PI*2/rays;
+        const l=r*(1.55+0.35*Math.sin(T*2.2+i*1.7+n.ph));
+        ctx.moveTo(n.x+Math.cos(a)*r*.7,n.y+Math.sin(a)*r*.7);
+        ctx.lineTo(n.x+Math.cos(a)*l,n.y+Math.sin(a)*l);
+      }
+      ctx.stroke();
+    }
+    const band=bandOf(n);
+    for(const d of n.dots){
+      const rr=r*1.3+d.rr*band;
+      blit(s.dot,
+        n.x+Math.cos(d.a)*rr+Math.sin(T*d.fx+d.wx)*9,
+        n.y+Math.sin(d.a)*rr+Math.cos(T*d.fy+d.wy)*9,
+        8*d.sz);
+    }
+  }
+  for(const p of packs){
+    const s=SPR[p.owner];
+    blit(s.glow,p.x,p.y,46,.3);
+    const band=bandOf(p);
+    for(const d of p.dots){
+      const rr=p.coreR*1.3+d.rr*band;
+      blit(s.dot,
+        p.x+Math.cos(d.a)*rr+Math.sin(T*d.fx+d.wx)*9,
+        p.y+Math.sin(d.a)*rr+Math.cos(T*d.fy+d.wy)*9,
+        8*d.sz);
+    }
+  }
+  for(const f of fleets){
+    const dx=f.tx-f.from.x, dy=f.ty-f.from.y;
+    const px=-dy/f.dist, py=dx/f.dist;
+    const spr=SPR[f.owner].dot;
+    for(const d of f.dots){
+      const dp=f.progress<=d.lag?0:Math.min(1,(f.progress-d.lag)/(1-d.lag));
+      const off=d.perp+Math.sin(T*d.ws+d.wp)*2.5;
+      blit(spr,f.from.x+dx*dp+px*off,f.from.y+dy*dp+py*off,8*d.sz);
+    }
+  }
+  for(const f of FX){
+    const p=f.t/f.dur;
+    blit(f.spr.glow,f.x,f.y,f.r1*2.4*(0.4+p),(1-p)*(f.kind==='cap'?.95:f.kind==='flash'?1:.7));
+  }
+
+  // normal pass: shells, selection, numbers, effect rings, drag box
+  ctx.globalCompositeOperation='source-over';
+  for(const n of nodes){
+    const colHex=OWNER_COLOR[n.owner], r=n.coreR;
+    const neutral=n.owner==='neutral';
+    // concentric target rings: 3 soft gray rings on neutrals, lvl colored rings on owned suns
+    const ringN=neutral?1+n.lvl:n.lvl;
+    for(let i=0;i<ringN;i++){
+      const rr=r*(1.35+i*0.5);
+      ctx.strokeStyle=rgba(colHex,(neutral?.3:.36)-i*.07);
+      ctx.lineWidth=3.5;
+      ctx.beginPath(); ctx.arc(n.x,n.y,rr,0,7); ctx.stroke();
+      ctx.strokeStyle=rgba(colHex,(neutral?.5:.58)-i*.1);
+      ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.arc(n.x,n.y,rr,0,7); ctx.stroke();
+    }
+    if(!neutral&&n.lvl<3&&n.units>n.cap){
+      const frac=Math.min(1,(n.units-n.cap)/UPGRADE_COST);
+      ctx.strokeStyle='rgba(255,255,255,.85)';
+      ctx.lineWidth=2.5;
+      ctx.beginPath(); ctx.arc(n.x,n.y,r*1.15,-Math.PI/2,-Math.PI/2+frac*Math.PI*2); ctx.stroke();
+    }
+    if(sel.includes(n)){
+      ctx.strokeStyle=`rgba(255,255,255,${.5+.25*Math.sin(T*4)})`;
+      ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.arc(n.x,n.y,r*1.3+bandOf(n)+6,0,7); ctx.stroke();
+    }
+    if(n.name){
+      ctx.fillStyle='rgba(5,9,7,.85)';
+      ctx.font=`bold ${Math.max(14,Math.round(r*.95))}px 'Press Start 2P',VT323,monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(n.name,n.x,n.y);
+      if(showNums){
+        ctx.fillStyle='rgba(236,229,204,.8)';
+        ctx.font='bold 15px VT323,monospace';
+        ctx.fillText(Math.floor(n.units),n.x,n.y+r*1.3+bandOf(n)+14);
+      }
+    } else if(showNums){
+      ctx.fillStyle='rgba(5,9,7,.8)';
+      ctx.font=`bold ${Math.max(11,Math.round(r*.85))}px VT323,monospace`;
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(Math.floor(n.units),n.x,n.y);
+    }
+  }
+  for(const p of packs){
+    if(sel.includes(p)){
+      ctx.strokeStyle=`rgba(255,255,255,${.5+.25*Math.sin(T*4)})`;
+      ctx.lineWidth=1.8;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.coreR*1.3+bandOf(p)+6,0,7); ctx.stroke();
+    }
+    if(showNums){
+      ctx.fillStyle='rgba(236,229,204,.8)';
+      ctx.font='bold 13px VT323,monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(Math.floor(p.units),p.x,p.y);
+    }
+  }
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  for(const f of FX){
+    if(f.kind==='flash') continue;
+    const p=f.t/f.dur, ease=0.2+0.8*(1-(1-p)*(1-p));
+    ctx.strokeStyle=rgba(f.colHex,(1-p)*.8);
+    ctx.lineWidth=f.kind==='cap'?2.2:1.4;
+    ctx.beginPath(); ctx.arc(f.x,f.y,f.r1*ease,0,7); ctx.stroke();
+    if(f.kind==='cap'){
+      ctx.strokeStyle=rgba(f.colHex,(1-p)*.45);
+      ctx.beginPath(); ctx.arc(f.x,f.y,f.r1*ease*.6,0,7); ctx.stroke();
+    }
+  }
+  if(dragging&&lasso.length>1){
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(lasso[0][0],lasso[0][1]);
+    for(let i=1;i<lasso.length;i++) ctx.lineTo(lasso[i][0],lasso[i][1]);
+    ctx.strokeStyle='rgba(224,182,79,.28)'; ctx.lineWidth=6; ctx.stroke();
+    ctx.strokeStyle='rgba(236,229,204,.9)'; ctx.lineWidth=1.6; ctx.stroke();
+    ctx.setLineDash([5,4]);
+    ctx.strokeStyle='rgba(224,182,79,.6)'; ctx.lineWidth=1.2;
+    ctx.beginPath();
+    ctx.moveTo(lasso[lasso.length-1][0],lasso[lasso.length-1][1]);
+    ctx.lineTo(lasso[0][0],lasso[0][1]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+function nodeAt(vx,vy){
+  let best=null,bd=Infinity;
+  for(const n of nodes){
+    const r=n.coreR*1.3+bandOf(n)+6;
+    const d=Math.hypot(n.x-vx,n.y-vy);
+    if(d<=r&&d<bd){ bd=d; best=n; }
+  }
+  for(const p of packs){
+    const r=p.coreR*1.3+bandOf(p)+8;
+    const d=Math.hypot(p.x-vx,p.y-vy);
+    if(d<=r&&d<bd){ bd=d; best=p; }
+  }
+  return best;
+}
+function cancelDrag(){ dragging=false; dragPid=null; lasso=[]; }
+function inLasso(x,y){
+  let inside=false;
+  for(let i=0,j=lasso.length-1;i<lasso.length;j=i++){
+    const xi=lasso[i][0],yi=lasso[i][1],xj=lasso[j][0],yj=lasso[j][1];
+    if((yi>y)!==(yj>y) && x<(xj-xi)*(y-yi)/(yj-yi)+xi) inside=!inside;
+  }
+  return inside;
+}
+function lassoTouches(x,y,r){
+  for(let i=0,j=lasso.length-1;i<lasso.length;j=i++){
+    const ax=lasso[j][0],ay=lasso[j][1],bx=lasso[i][0],by=lasso[i][1];
+    const dx=bx-ax,dy=by-ay;
+    const t=Math.max(0,Math.min(1,((x-ax)*dx+(y-ay)*dy)/(dx*dx+dy*dy||1)));
+    if(Math.hypot(x-(ax+t*dx),y-(ay+t*dy))<=r) return true;
+  }
+  return false;
+}
+cv.addEventListener('pointerdown',e=>{
+  if(demoOn||ended||screenState!=='game') return;
+  if(e.button!==0&&!(e.button===2&&e.ctrlKey)) return;
+  if(dragging) return;
+  const v=toVirtual(e.clientX,e.clientY), vx=v[0], vy=v[1];
+  const hit=nodeAt(vx,vy);
+  if(hit){
+    if(hit.owner===PLAYER){
+      if(e.shiftKey){ const i=sel.indexOf(hit); if(i>=0) sel.splice(i,1); else sel.push(hit); }
+      else if(sel.length&&!(sel.length===1&&sel[0]===hit)){ sendFromSelection(hit); sel=[]; }
+      else sel=[hit];
+    } else if(sel.length){ sendFromSelection(hit); sel=[]; }
+  } else {
+    // could become a lasso (drag) or a park order (tap) — decided on pointerup
+    lasso=[[vx,vy]]; dragging=true; dragPid=e.pointerId;
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+  }
+});
+cv.addEventListener('pointermove',e=>{
+  if(!dragging||e.pointerId!==dragPid||!lasso.length) return;
+  const v=toVirtual(e.clientX,e.clientY);
+  const lp=lasso[lasso.length-1];
+  if(Math.hypot(v[0]-lp[0],v[1]-lp[1])>5&&lasso.length<800) lasso.push(v);
+});
+cv.addEventListener('pointerup',e=>{
+  if(!dragging||e.pointerId!==dragPid) return;
+  if(lasso.length){
+    const v=toVirtual(e.clientX,e.clientY);
+    const lp=lasso[lasso.length-1];
+    if(Math.hypot(v[0]-lp[0],v[1]-lp[1])>2&&lasso.length<800) lasso.push(v);
+  }
+  let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+  for(const p of lasso){
+    minx=Math.min(minx,p[0]); maxx=Math.max(maxx,p[0]);
+    miny=Math.min(miny,p[1]); maxy=Math.max(maxy,p[1]);
+  }
+  const moved=lasso.length>=3&&(maxx-minx>10||maxy-miny>10);
+  if(moved){
+    if(!e.shiftKey) sel=[];
+    for(const c of nodes.concat(packs)){
+      if(c.owner!==PLAYER||sel.includes(c)) continue;
+      if(inLasso(c.x,c.y)||lassoTouches(c.x,c.y,c.coreR)) sel.push(c);
+    }
+  } else if(sel.length&&lasso.length){
+    // tap on open space with a selection: park everything there
+    sendFromSelection({isPoint:true,x:lasso[0][0],y:lasso[0][1]});
+    sel=[];
+  }
+  cancelDrag();
+});
+cv.addEventListener('pointercancel',e=>{ if(e.pointerId===dragPid) cancelDrag(); });
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('dblclick',e=>{
+  if(demoOn||ended||screenState!=='game') return;
+  const v=toVirtual(e.clientX,e.clientY);
+  const hit=nodeAt(v[0],v[1]);
+  if(hit&&hit.owner===PLAYER) sel=nodes.filter(n=>n.owner===PLAYER).concat(packs.filter(p=>p.owner===PLAYER));
+});
+
+function openMaps(){
+  document.getElementById('bResume').style.display=(nodes.length&&!ended)?'':'none';
+  show('maps');
+}
+document.getElementById('bMapList').onclick=openMaps;
+document.getElementById('bReset').onclick=()=>{ if(curMap>=0) initMap(curMap); };
+document.getElementById('cDemo').onchange=e=>{ demoOn=e.target.checked; sel=[]; cancelDrag(); };
+document.getElementById('bGetalle').onclick=()=>{
+  showNums=!showNums;
+  document.getElementById('bGetalle').textContent=showNums?'Getalle: AAN':'Getalle: AF';
+};
+document.getElementById('bAgain').onclick=()=>{ initMap(curMap); };
+document.getElementById('bToMaps').onclick=openMaps;
+document.getElementById('bResume').onclick=()=>{ show('game'); };
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ sel=[]; cancelDrag(); }
+  if((e.key==='a'||e.key==='A')&&!demoOn&&!ended&&screenState==='game'){
+    sel=nodes.filter(n=>n.owner===PLAYER).concat(packs.filter(p=>p.owner===PLAYER));
+  }
+});
+</script>
+</body>
+</html>
