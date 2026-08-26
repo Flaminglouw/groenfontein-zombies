@@ -279,7 +279,7 @@ function genLevel(v){
   gates.push({z:len-28,...(LF?sA:sB),op:'x',n:2,done:false});
   gates.push({z:len-28,...(LF?sB:sA),op:'-',n:Math.round(exp*.5),done:false});
   exp*=2;
-  boss={z:len,u:0,hp:Math.max(80,Math.round(exp*1.4+v*20)),mhp:0,hit:0,stampT:2.5,dood:0};
+  boss={z:len,u:0,hp:Math.max(80,Math.round(exp*1.55+v*24)),mhp:0,hit:0,stampT:2.5,dood:0};
   boss.mhp=boss.hp;
   return len;
 }
