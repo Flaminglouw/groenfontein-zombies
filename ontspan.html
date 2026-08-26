@@ -361,74 +361,131 @@ const MAPS=[
 // Tegniek: Eno 'Music for Airports'-fase-lusse — een noot per stem, elk op sy eie
 // ongelyke lus-tyd (~17-33s), sodat toevallige akkoorde vorm; alles pentatonies.
 let AC=null,MG=null,verbIn=null,musOn=true,lastPluck=0;
-const MUS_NOTES=[53,55,57,60,62,65,69]; // F3 G3 A3 C4 D4 F4 A4 — geen halftoon-botsings
+const MUS_NOTES=[41,45,48,50,53,55,57,62]; // F2 A2 C3 D3 F3 G3 A3 D4 — diep, suiwer konsonant
+const HI_NOTES=[77,81,84];                 // F5 A5 C6 — sterlig-skynsel
 function nHz(m){return 440*Math.pow(2,(m-69)/12);}
 function initAudio(){
   if(AC) return;
   try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(_){ return; }
   MG=AC.createGain(); MG.gain.value=musOn?0.9:0;
-  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=2600;
-  // goedkoop galm: twee kruis-gevoerde delays met terugvoer
+  const lp=AC.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=1600;
+  // groot donker galm: twee kruis-gevoerde delays met terugvoer en demping
   verbIn=AC.createGain(); verbIn.gain.value=0.9;
-  const d1=AC.createDelay(1), d2=AC.createDelay(1);
-  d1.delayTime.value=0.211; d2.delayTime.value=0.337;
-  const f1=AC.createGain(), f2=AC.createGain(); f1.gain.value=0.42; f2.gain.value=0.42;
-  const dl=AC.createBiquadFilter(); dl.type='lowpass'; dl.frequency.value=1600;
+  const d1=AC.createDelay(1.5), d2=AC.createDelay(1.5);
+  d1.delayTime.value=0.31; d2.delayTime.value=0.47;
+  const f1=AC.createGain(), f2=AC.createGain(); f1.gain.value=0.52; f2.gain.value=0.52;
+  const dl=AC.createBiquadFilter(); dl.type='lowpass'; dl.frequency.value=1100;
   verbIn.connect(d1); verbIn.connect(d2);
   d1.connect(f1); f1.connect(d2); d2.connect(f2); f2.connect(dl); dl.connect(d1);
-  const wet=AC.createGain(); wet.gain.value=0.5;
+  const wet=AC.createGain(); wet.gain.value=0.6;
   d1.connect(wet); d2.connect(wet);
   wet.connect(MG); verbIn.connect(MG);
   MG.connect(lp); lp.connect(AC.destination);
+  // 1) diep asemhalende dreun-fondament (F1 + C2), skoon verby die galm
+  drone(29,0.020,0.031); drone(36,0.014,0.023);
+  // 2) Eno-fase-stemme: laag, stadig, wyd — periodes 25-55s sodat akkoorde toevallig vorm
   MUS_NOTES.forEach((m,i)=>{
-    const period=17+i*2.3+Math.random()*3;
+    const period=25+i*3.7+Math.random()*4;
     schedVoice(m,period,Math.random()*period);
   });
+  // 3) skaars sterlig bo en 'n sagte kosmiese wind
+  schedShimmer(); schedWind();
+}
+function drone(m,vol,lfoHz){
+  const t=AC.currentTime;
+  for(const det of [0,4]){
+    const o=AC.createOscillator(); o.type='sine'; o.frequency.value=nHz(m); o.detune.value=det;
+    const g=AC.createGain(); g.gain.setValueAtTime(0,t);
+    g.gain.linearRampToValueAtTime(vol,t+12);
+    const lfo=AC.createOscillator(); lfo.frequency.value=lfoHz;
+    const ld=AC.createGain(); ld.gain.value=vol*0.45;
+    lfo.connect(ld); ld.connect(g.gain);
+    o.connect(g); g.connect(MG);
+    o.start(t); lfo.start(t);
+  }
 }
 function schedVoice(m,periodS,delayS){
   setTimeout(()=>{ if(!AC) return; padNote(m); schedVoice(m,periodS,periodS); }, delayS*1000);
 }
 function padNote(m){
   if(!AC||!musOn) return;
-  const t=AC.currentTime;
-  for(const det of [0,2.5]){
+  const t=AC.currentTime, A=4+Math.random()*2, R=8+Math.random()*3;
+  const pan=AC.createStereoPanner?AC.createStereoPanner():null;
+  if(pan){ pan.pan.value=Math.random()*1.4-0.7; pan.connect(verbIn); }
+  for(const det of [0,3]){
     const o=AC.createOscillator(); o.type='sine'; o.frequency.value=nHz(m); o.detune.value=det;
     const g=AC.createGain();
     g.gain.setValueAtTime(0,t);
-    g.gain.linearRampToValueAtTime(0.055,t+2.8);
-    g.gain.setValueAtTime(0.055,t+4.8);
-    g.gain.linearRampToValueAtTime(0,t+9.5);
-    o.connect(g); g.connect(verbIn);
-    o.start(t); o.stop(t+10);
+    g.gain.linearRampToValueAtTime(0.045,t+A);
+    g.gain.setValueAtTime(0.045,t+A+2);
+    g.gain.linearRampToValueAtTime(0,t+A+2+R);
+    o.connect(g); g.connect(pan||verbIn);
+    o.start(t); o.stop(t+A+2+R+0.5);
   }
+}
+function schedShimmer(){
+  setTimeout(()=>{
+    if(!AC) return;
+    if(musOn){
+      const t=AC.currentTime, m=HI_NOTES[(Math.random()*HI_NOTES.length)|0];
+      const o=AC.createOscillator(); o.type='sine'; o.frequency.value=nHz(m);
+      const g=AC.createGain();
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.02,t+3);
+      g.gain.linearRampToValueAtTime(0,t+9);
+      o.connect(g); g.connect(verbIn);
+      o.start(t); o.stop(t+9.5);
+    }
+    schedShimmer();
+  },(18+Math.random()*22)*1000);
+}
+function schedWind(){
+  setTimeout(()=>{
+    if(!AC) return;
+    if(musOn){
+      const t=AC.currentTime, dur=14;
+      const len=2*AC.sampleRate, buf=AC.createBuffer(1,len,AC.sampleRate);
+      const ch=buf.getChannelData(0);
+      for(let i=0;i<len;i++) ch[i]=Math.random()*2-1;
+      const src=AC.createBufferSource(); src.buffer=buf; src.loop=true;
+      const bp=AC.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=250+Math.random()*300; bp.Q.value=0.6;
+      const g=AC.createGain();
+      g.gain.setValueAtTime(0,t);
+      g.gain.linearRampToValueAtTime(0.022,t+6);
+      g.gain.linearRampToValueAtTime(0,t+dur);
+      src.connect(bp); bp.connect(g); g.connect(verbIn);
+      src.start(t); src.stop(t+dur+0.5);
+    }
+    schedWind();
+  },(24+Math.random()*20)*1000);
 }
 function tone(m,vol,dur){
   if(!AC||!musOn) return;
   const t=AC.currentTime;
-  const o=AC.createOscillator(); o.type='triangle'; o.frequency.value=nHz(m);
+  const o=AC.createOscillator(); o.type='sine'; o.frequency.value=nHz(m);
   const g=AC.createGain();
   g.gain.setValueAtTime(0,t);
-  g.gain.linearRampToValueAtTime(vol,t+0.02);
+  g.gain.linearRampToValueAtTime(vol,t+0.06);
   g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
   o.connect(g); g.connect(verbIn);
   o.start(t); o.stop(t+dur+0.1);
 }
 function sndSend(owner){
   const now=performance.now();
-  if(now-lastPluck<120) return;
+  if(now-lastPluck<160) return;
   lastPluck=now;
-  tone(MUS_NOTES[(Math.random()*MUS_NOTES.length)|0]+12, owner===PLAYER?0.10:0.05, 1.6);
+  tone(MUS_NOTES[(Math.random()*MUS_NOTES.length)|0]+24, owner===PLAYER?0.07:0.035, 2.2);
 }
 function sndCapture(){
   const i=(Math.random()*(MUS_NOTES.length-2))|0;
-  tone(MUS_NOTES[i]+12,0.12,2.2); tone(MUS_NOTES[i+2]+12,0.10,2.6);
+  tone(MUS_NOTES[i]+24,0.085,2.8); tone(MUS_NOTES[i+2]+24,0.07,3.2);
 }
 function sndUpgrade(){
-  [0,1,2].forEach(k=>setTimeout(()=>tone(MUS_NOTES[2+k]+12,0.11,1.8),250+180*k));
+  [0,1,2].forEach(k=>setTimeout(()=>tone(MUS_NOTES[2+k]+24,0.08,2.4),250+220*k));
 }
 function sndEnd(won){
-  const seq=won?[3,4,5,6]:[2,1,0];
-  seq.forEach((i,k)=>setTimeout(()=>tone(MUS_NOTES[i]+(won?12:0),0.12,2.4),260*k));
+  const seq=won?[4,5,6,7]:[2,1,0];
+  seq.forEach((i,k)=>setTimeout(()=>tone(MUS_NOTES[i]+(won?12:0),0.09,3),320*k));
 }
 document.addEventListener('pointerdown',()=>{ initAudio(); if(AC&&AC.state==='suspended') AC.resume(); },{capture:true});
 
