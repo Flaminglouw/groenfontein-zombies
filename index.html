@@ -79,7 +79,9 @@ h1{font-family:'Press Start 2P',ui-monospace,monospace;color:var(--gold);font-si
 @media (pointer:coarse){#bQuit{width:46px;height:46px;font-size:22px;top:8px;right:10px}}
 </style>
 
-<div class="screen on" id="scrMenu"><div class="panel">
+<div class="screen on" id="scrMenu">
+  <a class="btn ghost" href="kanontjie.html" style="position:absolute;top:10px;right:10px;text-decoration:none;z-index:11;font-size:16px;padding:3px 10px;margin:0;background:rgba(20,30,26,.85)">🎖️ Kanontjie vir Pa</a>
+  <div class="panel">
   <h1>DRIE BROERS</h1>
   <div class="sub">GROENFONTEIN ZOMBIES</div>
   <p class="story">Die nag toe die ligte oor die bult doodgegaan het, het die eerste gekreun deur die doringdraad gekom. Drie broers. Een plaas. Geen genade. Hou Groenfontein — so lank as wat jy kan.</p>
@@ -1057,6 +1059,13 @@ function newGame(char){
     regen:0, speed:175, dmgMul:1, cdMul:1, armor:0, xpMul:1, munteMul:1, magnetR:80, byBudget:null,
     revived:false, splats:[], dawnShown:false, nightShown:false,
     rageT:0, rageCd:0, rageProc:0, poeseCd:0, dashT:0, dashCd:0, dashProc:0, novaCd:0, novaProc:0,
+    // --- rondte-2 mobs ---
+    // slowT is die ENIGSTE speler-stadigheidkanaal. Alles wat die speler stadig maak (erdvarkgat,
+    // later die Ganse en die Anker-affiks) skryf met Math.max hierheen. Dit STAPEL NOOIT en die
+    // vloer is presies SLOW_MUL — twee bronne is nie erger as een nie.
+    slowT:0, slowCd:0,
+    gate:[], gateI:0,   // erdvarkgate: vaste ring, geen per-raam allokasie
+    erdT:rand(150,210), // wanneer die volgende erdvark geroep word
   };
   addWeapon(char.weapon);
   if(char.startPassives)for(const k in char.startPassives){G.passives[k]=char.startPassives[k];markSeen('p',k);}
@@ -1101,6 +1110,9 @@ function scatterProps(){
    grootste een slaan vol en die res teen EXTRA. 'n Sekonde-begroting keer dat
    'n muur van lywe jou onmiddellik doodmaak.                              */
 const VASBYT={cd:.85, inv:.18, extra:.35, maks:3, sekCap:.50};
+// Speler-stadigheid: EEN kanaal, harde vloer, stapel nooit. Sien G.slowT in newGame.
+const SLOW_MUL=.7;
+function slowPlayer(t){ if(G.slowT<t)G.slowT=t; }   // Math.max-semantiek, altyd
 const BYTERS=[];
 function vasbyt(dt){
   // begroting vul aan tot een sekonde se toelae
@@ -1308,6 +1320,9 @@ function spawnZombie(type,px,py,weak,force){
     z.maxhp=z.hp;z.dmg0=z.dmg;z.dmgC=z.dmg*1.5;
   }
   else if(type==='spoeger')z={x,y,hp:14*m,maxhp:14*m,spd:58*sm*.7,dmg:6*dm,r:12,xp:3,type,spitT:rand(1,2.2)};
+  // ERDVARK — hy jaag jou nooit, hy REDIGEER die veld. dmg 0 by ontwerp; sy gate is die dreigement.
+  else if(type==='erdvark')z={x,y,hp:90*m,maxhp:90*m,spd:60*sm,dmg:0,r:16,xp:18,type,
+    st:'stap',stT:rand(2,5),wx:x,wy:y,digN:0};
   else if(type==='vlakvark'){z={x,y,hp:26*m,maxhp:26*m,spd:54*sm,dmg:10*dm,r:16,xp:5,type,st:'walk',stT:0};z.dmg0=z.dmg;z.dmgC=20*dm;}
   else if(type==='skaap')z={x,y,hp:16*m,maxhp:16*m,spd:62*sm,dmg:8*dm,r:14,xp:2,type};
   else z={x,y,hp:11*m,maxhp:11*m,spd:(46+rand(0,14))*sm,dmg:9*dm,r:13,xp:1,type:'plaas'};
@@ -1838,6 +1853,7 @@ function update(dt){
     let terr=1;
     if(pz===Z_PAD)terr=PAD_SPOED;
     else if(pz===Z_VORE)terr=voreMul(mx,my);
+    if(G.slowT>0)terr*=SLOW_MUL; // erdvarkgat ens. — een kanaal, nooit gestapel
     const vsp=G.speed*dashMul*terr;
     G.pvx=mx*vsp;G.pvy=my*vsp;   // speler-snelheid: die spoeger lei hierop, en die jakkals later ook
     G.x+=G.pvx*dt;G.y+=G.pvy*dt;
@@ -1849,6 +1865,20 @@ function update(dt){
   }
   G.r=14;pushOut(G);
   if(G.inv>0)G.inv-=dt;
+  if(G.slowT>0)G.slowT-=dt;
+  if(G.slowCd>0)G.slowCd-=dt;
+  // --- erdvarkgate: 12 statiese sirkels, speler-kant ---
+  if(G.gate.length&&G.slowCd<=0){
+    for(const h of G.gate){
+      if(dist2(G.x,G.y,h.x,h.y)<h.r*h.r){
+        slowPlayer(.45); G.slowCd=2.5;   // per-speler hergebruik-afkoeling: een gat, een struikel
+        if(G.dnums.length<90)G.dnums.push({x:G.x,y:G.y-22,v:'eina!',t:.7});
+        for(let i=0;i<6;i++)if(G.parts.length<280)G.parts.push({tp:'dot',x:G.x+rand(-8,8),y:G.y+10,
+          vx:rand(-40,40),vy:rand(-30,-4),t:0,life:.5,col:'#b9a175',r:rand(1.6,3)});
+        break;
+      }
+    }
+  }
   if(G.regen)G.hp=Math.min(G.maxhp,G.hp+G.regen*dt);
   if(G.shake>0)G.shake-=dt*30;
   // spawns
@@ -1857,6 +1887,17 @@ function update(dt){
     G.spawnT=Math.max(.2,1.1-t*.0026)*(1+Math.sin(t/38)*.35); // gety: stiltes en stuwings
     const n=1+((t/100)|0);
     for(let i=0;i<n;i++)spawnZombie(rollType());
+  }
+  // ERDVARK-klok — hy is direkteur-geroep, NIE in rollType nie (hy is nie gety-inhoud nie).
+  // Net snags, en nooit meer as 2 lewend nie: sy gate is die inhoud, nie sy lyf nie.
+  G.erdT-=dt;
+  if(G.erdT<=0){
+    G.erdT=rand(120,180);
+    if(nightAlpha()>.4){
+      let lewend=0;
+      for(const z of G.zombies)if(!z.dead&&z.type==='erdvark')lewend++;
+      if(lewend<2)spawnZombie('erdvark');
+    }
   }
   if(t>=G.waveT){
     G.waveT+=rand(70,95);
@@ -2136,6 +2177,20 @@ function update(dt){
     }
     const dx=tX-z.x,dy=tY-z.y,d=Math.hypot(dx,dy)||1;
     if(z.slowT>0)z.slowT-=dt;
+    if(z.gatCd>0)z.gatCd-=dt;
+    // erdvarkgat: die trop struikel ook. Per-zombie afkoeling sodat 'n lyf wat IN 'n gat staan
+    // nie elke 0.7s van voor af val nie (dit sou gratis oneindige CC wees), en base is immuun.
+    // z.stun word by :2200 afgetel en hek daar die hele AI — moenie dit hier ook aftel nie.
+    if(G.gate.length&&!z.dead&&z.gatCd<=0&&z.type!=='boss'&&z.type!=='erdvark'&&!(z.stun>0)){
+      for(const h of G.gate){
+        if(dist2(z.x,z.y,h.x,h.y)<h.r*h.r){
+          z.stun=.7; z.gatCd=2.5; z.slowT=Math.max(z.slowT,.5);
+          if(G.parts.length<280)G.parts.push({tp:'dot',x:z.x+rand(-6,6),y:z.y+8,vx:rand(-26,26),
+            vy:rand(-28,-6),t:0,life:.4,col:'#b9a175',r:2.4});
+          break;
+        }
+      }
+    }
     if(z.confT>0)z.confT-=dt;
     if(z.druk>0)z.druk-=dt;
     if(z.bleed){
@@ -2263,6 +2318,34 @@ function update(dt){
         z.x+=dx/d*z.spd*dt;z.y+=dy/d*z.spd*dt;
       }
     }
+    // ERDVARK — eie tak (broers-40 se :2166-presedent: moenie 'n gedeelde hek verbreed nie).
+    // Hy soek jou nooit. Hy dwaal na sy eie punte, grawe, en los gate. Kom jy naby, vlug hy.
+    else if(z.type==='erdvark'){
+      if(d<120&&z.st!=='grawe'){        // skugter: hy veg nie, hy loop weg
+        z.x-=dx/d*150*dt; z.y-=dy/d*150*dt;
+        z.st='stap'; z.stT=Math.min(z.stT,1.2);
+      }
+      else if(z.st==='grawe'){
+        z.stT-=dt;
+        if(R()<.55&&G.parts.length<280)G.parts.push({tp:'dot',x:z.x+rand(-11,11),y:z.y+12,
+          vx:rand(-30,30),vy:rand(-46,-12),t:0,life:.5,col:'#b9a175',r:rand(2,3.4)});
+        if(z.stT<=0){
+          // GAT: vaste ring van 12, oudste word oorskryf — geen allokasie, geen groei
+          const h={x:z.x,y:z.y,r:26,born:G.time};
+          if(G.gate.length<12)G.gate.push(h); else G.gate[G.gateI%12]=h;
+          G.gateI++; z.digN++;
+          z.st='stap'; z.stT=rand(5,8);
+          z.wx=clamp(z.x+rand(-320,320),60,WORLD_W-60);
+          z.wy=clamp(z.y+rand(-320,320),60,WORLD_H-60);
+        }
+      }
+      else{                              // stap na sy eie punt, dan grawe
+        z.stT-=dt;
+        const wdx=z.wx-z.x, wdy=z.wy-z.y, wd=Math.hypot(wdx,wdy)||1;
+        if(wd>26){ z.x+=wdx/wd*z.spd*dt; z.y+=wdy/wd*z.spd*dt; }
+        if(z.stT<=0||wd<=26){ z.st='grawe'; z.stT=1.2; }
+      }
+    }
     else if(z.type==='spoeger'){
       z.spitT-=dt;
       let hx=0,hy=0;
@@ -2299,7 +2382,7 @@ function update(dt){
     // raak speler — versamel nou, slaan later toe (sien VASBYT)
     if(z.atkCd>0)z.atkCd-=dt;
     const rr=z.r+G.r-2;
-    if(pd<rr&&z.atkCd<=0&&G.dying==null&&!(z.ally>0))BYTERS.push(z);
+    if(pd<rr&&z.atkCd<=0&&G.dying==null&&!(z.ally>0)&&z.dmg>0)BYTERS.push(z);
   }
   vasbyt(dt);
   if(G.dying!=null)return;
@@ -2887,13 +2970,58 @@ function zCols(z){
   if(z.type==='runner')body='#93a86a';
   if(z.type==='spoeger'){body='#7fb069';dark='#3a5a2e';}
   if(z.type==='vlakvark'){body='#8a6a4a';dark='#4a3520';}
+  if(z.type==='erdvark'){body='#9a7550';dark='#4a3520';} // plaasbruin, effens ligter as die vlakvark
   if(z.type==='skaap'||z.type==='lam'){body='#e8e4d6';dark='#9a927e';}
   if(z.type==='hoed'){body='#2a2d31';dark='#101214';}
   if(z.variant==='alicia'){body='#c9a0a8';dark='#7a5560';}
   if(z.variant==='jan'){body='#8aa05a';dark='#4a5530';}
   return [body,dark];
 }
+// ERDVARK-vorm. Nie 'n ovaal nie: 'n traanvormige romp, 'n dik taps-stert en vier pote.
+// Die dinge wat UITSTEEK is wat 'n dier by 30px van 'n aartappel onderskei — die romp alleen
+// lees soos enige ander lyf. Alles in plaaslike ruimte met die kop na +x; die bak roteer dit.
+function erdRomp(c,r){
+  c.beginPath();
+  c.moveTo( 1.15*r, 0);
+  c.quadraticCurveTo( 0.96*r,-0.28*r, 0.62*r,-0.42*r);
+  c.quadraticCurveTo( 0.16*r,-0.60*r,-0.25*r,-0.66*r);
+  c.quadraticCurveTo(-0.78*r,-0.72*r,-0.98*r,-0.30*r);
+  c.quadraticCurveTo(-1.08*r, 0     ,-0.98*r, 0.30*r);
+  c.quadraticCurveTo(-0.78*r, 0.72*r,-0.25*r, 0.66*r);
+  c.quadraticCurveTo( 0.16*r, 0.60*r, 0.62*r, 0.42*r);
+  c.quadraticCurveTo( 0.96*r, 0.28*r, 1.15*r, 0);
+  c.closePath();
+}
+function drawErdvark(c,z,body,dark,mono){
+  const r=z.r, g=z.wob;
+  // pote (eerste, dus onder die romp)
+  c.strokeStyle=mono||dark;c.lineWidth=r*.26;c.lineCap='round';
+  for(const[lx,ly,ang]of[[.34*r,-.55*r,-0.85],[.34*r,.55*r,0.85],[-.42*r,-.60*r,-2.30],[-.42*r,.60*r,2.30]]){
+    c.beginPath();c.moveTo(lx,ly);
+    c.lineTo(lx+Math.cos(ang)*r*.42,ly+Math.sin(ang)*r*.42);c.stroke();
+  }
+  // stert — taps-sirkels, want 'n dun lyn verdwyn by 30px
+  c.fillStyle=mono||body;
+  for(let i=0;i<11;i++){
+    const t=i/10, x=-0.70*r-t*1.15*r, y=Math.sin(t*1.5+g)*0.10*r*(0.3+t);
+    c.beginPath();c.arc(x,y,(0.26-0.21*t)*r,0,TAU);c.fill();
+  }
+  c.fillStyle=mono||body;erdRomp(c,r);c.fill();
+  if(!mono){c.strokeStyle=dark;c.lineWidth=1.6;c.stroke();}
+  for(const s of[-1,1]){ // ore
+    c.save();c.translate(0.72*r,s*0.44*r);c.rotate(s*0.55);
+    c.fillStyle=mono||body;c.beginPath();c.ellipse(0,0,r*.30,r*.17,0,0,TAU);c.fill();
+    if(!mono){c.strokeStyle=dark;c.lineWidth=1.2;c.stroke();}
+    c.restore();
+  }
+  c.fillStyle=mono||body;c.beginPath();c.ellipse(1.12*r,0,r*.22,r*.13,0,0,TAU);c.fill();
+  if(!mono){c.strokeStyle=dark;c.lineWidth=1.2;c.stroke();}
+  c.fillStyle=mono||'#c0392b';
+  c.beginPath();c.arc(0.80*r,-0.14*r,r*.075,0,TAU);c.fill();
+  c.beginPath();c.arc(0.80*r, 0.14*r,r*.075,0,TAU);c.fill();
+}
 function drawZTrunk(c,z,a,body,dark){ // arms + lyf — draai veilig saam met kykrigting
+  if(z.type==='erdvark'){drawErdvark(c,z,body,dark,null);return;}
   const wob=Math.sin(z.wob)*2;
   // arms na speler
   c.strokeStyle=dark;c.lineWidth=z.type==='boss'?7:4;c.lineCap='round';
@@ -2906,6 +3034,7 @@ function drawZTrunk(c,z,a,body,dark){ // arms + lyf — draai veilig saam met ky
   c.strokeStyle=dark;c.lineWidth=2;c.stroke();
 }
 function drawZRest(c,z,a,body,dark,mono){ // dekor + kop + oë; mono='#fff' teken alles wit vir die tref-flits
+  if(z.type==='erdvark')return; // sy kop, ore en snoet sit klaar in drawErdvark se romp-pas
   if(z.type==='bul'){ // bul-horings
     c.strokeStyle=mono||'#d9d4c2';c.lineWidth=4;
     c.beginPath();c.arc(-z.r*.5,-z.r*.55,z.r*.5,Math.PI*.9,Math.PI*1.6);c.stroke();
@@ -3012,7 +3141,7 @@ const ZSPR={},ZSS=3,LV_N=12,LV_K=.72;  // LV_N ligvlakke per tipe; LV_K = hoevee
    jy dit na swart stoot word elke zombie se ledemate solied swart stokke.   */
 const ZINK='#131a10', ZINK_D=.62;      // ZINK_D = dilasie in gebakte pixels (x ZSS)
 {
-  const ZBASE={plaas:13,runner:11,spoeger:12,skaap:14,lam:8,bul:24,vlakvark:16};
+  const ZBASE={plaas:13,runner:11,spoeger:12,skaap:14,lam:8,bul:24,vlakvark:16,erdvark:16};
   for(const tp in ZBASE)for(let t=0;t<(tp==='plaas'?3:1);t++){
     const z={type:tp,tint:t,r:ZBASE[tp],wob:0,st:'walk'};
     const bd=zCols(z), half=z.r+12;
@@ -3020,7 +3149,7 @@ const ZINK='#131a10', ZINK_D=.62;      // ZINK_D = dilasie in gebakte pixels (x 
     const b=s.getContext('2d');
     b.translate(half*ZSS,half*ZSS);b.scale(ZSS,ZSS);
     drawZTrunk(b,z,0,bd[0],bd[1]);
-    if(tp!=='bul'&&tp!=='vlakvark')drawZRest(b,z,0,bd[0],bd[1]);
+    if(tp!=='bul'&&tp!=='vlakvark'&&tp!=='erdvark')drawZRest(b,z,0,bd[0],bd[1]);
     /* KONTOER, by BAKTYD — dus gratis by looptyd, en al 12 ligvlakke hieronder
        erf dit. Ons maak 'n ink-kopie van die silhoeët en stempel dit agt keer
        in 'n sirkel uit, dan die kleurlyf bo-oor: dis 'n dilasie, nie 'n streek
@@ -3217,6 +3346,18 @@ function render(){
   if(!G){ctx.fillStyle='rgba(10,14,7,.2)';ctx.fillRect(0,0,VW,VH);ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);return;}
   const na=nightAlpha();
   ctx.save();ctx.translate(-camX,-camY);
+  // ERDVARKGATE — donker gat plus 'n BLEEK uitgegooide sandwal. Die wal is nie versiering nie:
+  // 'n donker kol op donker grond snags is 'n onsigbare stadigheid, en 'n stadigheid wat jy nie
+  // kon sien nie lees as onverdiende dood. Die wal is wat dit teen die nag laat lees.
+  for(const h of G.gate){
+    if(h.x<camX-40||h.x>camX+VW+40||h.y<camY-40||h.y>camY+VH+40)continue;
+    ctx.save();ctx.translate(h.x,h.y);
+    ctx.fillStyle='rgba(196,174,131,.55)';                 // sandwal
+    ctx.beginPath();ctx.ellipse(0,2,h.r*1.16,h.r*.86,0,0,TAU);ctx.fill();
+    ctx.fillStyle='rgba(24,18,11,.85)';                     // die gat self
+    ctx.beginPath();ctx.ellipse(0,0,h.r*.82,h.r*.58,0,0,TAU);ctx.fill();
+    ctx.restore();
+  }
   // bloedkolle — donkerrooi
   for(const sp of G.splats){
     if(sp.x<camX-30||sp.x>camX+VW+30||sp.y<camY-30||sp.y>camY+VH+30)continue;

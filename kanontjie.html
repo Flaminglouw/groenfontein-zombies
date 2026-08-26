@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="af">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kanontjie vir Pa</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:#04070a;color:#ece5cc;font-family:'VT323',ui-monospace,Menlo,monospace;display:flex;flex-direction:column;align-items:center;overflow:hidden;-webkit-user-select:none;user-select:none}
+#topbar{width:100%;display:flex;align-items:center;gap:10px;padding:6px 12px;background:rgba(4,8,12,.72);border-bottom:1px solid rgba(120,150,130,.18);flex:0 0 auto}
+#topbar a{font-family:'VT323',ui-monospace,monospace;font-size:16px;background:rgba(20,30,26,.6);color:#e0b64f;border:1px solid rgba(120,150,130,.3);padding:3px 12px;cursor:pointer;text-decoration:none}
+#topbar a:hover{border-color:#e0b64f;color:#ece5cc}
+#topbar span{color:#9aa07f;font-size:16px;letter-spacing:1px}
+#wrap{flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0}
+#game{width:min(390px,100vw);height:min(780px,100%)}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <a href="index.html">&larr; Terug na die plaas</a>
+  <span>KANONTJIE VIR PA</span>
+</div>
+
+<div id="wrap">
+  <div id="game"></div>
+</div>
+
+<script src="tank1990.js"></script>
+<script>Tank1990.mount(document.getElementById('game'), { relayUrl: null })</script>
+
+</body>
+</html>
