@@ -2143,9 +2143,15 @@ function fireWeapon(w,dt){
     let n=0;
     for(const z of NB){
       if(z.dead||z.type==='boss'||z.ally>0)continue;
-      if(dist2(G.x,G.y,z.x,z.y)<(rad+z.r)*(rad+z.r)){z.druk=T.dur*(w.evo?1.4:1);z.drukF=T.f*(w.evo?1.5:1);z.drukS=w.evo?1:0;n++;}
+      if(dist2(G.x,G.y,z.x,z.y)<(rad+z.r)*(rad+z.r)){
+        z.druk=T.dur*(w.evo?1.4:1);z.drukF=T.f*(w.evo?1.5:1);z.drukS=w.evo?1:0;n++;
+        if(G.parts.length<220)boomParts(z.x,z.y,4,'#ff4a3c'); // rooi opvlam op elke geraakte
+      }
     }
-    G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.4,r1:rad,col:w.evo?'#e05a5a':'#e07830'});
+    // drie uitkringende rooi golwe — die gooi moet lees, selfs in 'n horde
+    G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.35,r1:rad*.55,col:'#ff4a3c'});
+    G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.5,r1:rad*.8,col:w.evo?'#e05a5a':'#e07830'});
+    G.parts.push({tp:'ring',x:G.x,y:G.y,t:0,life:.65,r1:rad,col:'#ff4a3c'});
     if(n)SND.slash();
     w.cd=T.cd*G.cdMul;
   }
@@ -3712,6 +3718,15 @@ function zLv(spr,z){
   if(q<0)q=0;else if(q>LV_N-1)q=LV_N-1;
   return spr.lv[q];
 }
+function rooiOf(spr){ // rooi silhoeët uit die wit gebak, een keer per sprite gebak
+  if(!spr.rooi){
+    const c2=document.createElement('canvas');c2.width=spr.wht.width;c2.height=spr.wht.height;
+    const g=c2.getContext('2d');g.drawImage(spr.wht,0,0);
+    g.globalCompositeOperation='source-in';g.fillStyle='#e03c28';g.fillRect(0,0,c2.width,c2.height);
+    spr.rooi=c2;
+  }
+  return spr.rooi;
+}
 function drawZombie(c,z){
   const px=G?G.x:z.x+1, py=G?G.y:z.y;
   const a=Math.atan2(py-z.y,px-z.x);
@@ -3765,8 +3780,19 @@ function drawZombie(c,z){
     c.beginPath();c.arc(2,-z.r-8,2,0,TAU);c.fill();
     c.beginPath();c.moveTo(-4,-z.r-7);c.lineTo(0,-z.r-3);c.lineTo(4,-z.r-7);c.closePath();c.fill();
   }
-  if(z.druk>0){ // groepsdruk
-    c.fillStyle='#e07830';c.font='12px VT323, monospace';c.textAlign='center';
+  if(z.druk>0){ // groepsdruk: hulle veg vir jou — rooi deurdrenk sodat jy hulle sien
+    c.globalAlpha=.42+Math.sin(z.wob*4)*.18;
+    c.save();wip();
+    if(spr){
+      c.rotate(a);c.drawImage(rooiOf(spr),-sprH,-sprH,sprH*2,sprH*2);c.rotate(-a);
+      if(z.type==='bul'||z.type==='vlakvark')drawZRest(c,z,a,'#e03c28','#8a1f14','#e03c28');
+    }else{
+      drawZTrunk(c,z,a,'#e03c28','#8a1f14');
+      drawZRest(c,z,a,'#e03c28','#8a1f14','#e03c28');
+    }
+    c.restore();
+    c.globalAlpha=1;
+    c.fillStyle='#ff4a3c';c.font='12px VT323, monospace';c.textAlign='center';
     c.fillText('!',0,-z.r-6+Math.sin(z.wob*3)*2);
   }
   if(z.flash>0){ // tref-flits: volle wit silhoeët (G2-plan), nie net die lyf-ellips nie
