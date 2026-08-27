@@ -1516,6 +1516,7 @@ function damagePlayer(dmg){
   G.hp-=dmg;
   if(G.dnums.length<90)G.dnums.push({x:G.x,y:G.y-22,v:dmg,t:.7,hurt:true});
   if(G.hp<=0){
+    if(G.plaas){plaasBreek();return;}   // die Opstal val — GEBREEK, nooit die()-pad nie
     if(G.passives.poese&&G.poeseCd<=0){ // Louw se laaste woord
       const r=G.passives.poese; // sterker per rang
       G.poeseCd=95-13*r;        // r1:82s → r5:30s
@@ -1594,6 +1595,7 @@ function rebuildDogs(){
 }
 const xpNeed=l=>Math.floor(6+l*4+Math.pow(l,1.6));
 function gainXP(n){ // EEN vlak-op pad vir juwele én event-belonings; n is die finale XP (pas self xpMul toe)
+  if(G.plaas)return;   // die toets vlak nooit op nie — geen kaart-modaal, geen pend
   G.xp+=n;
   while(G.xp>=xpNeed(G.lvl)){G.xp-=xpNeed(G.lvl);G.lvl++;G.pend++;}
 }
@@ -1754,6 +1756,7 @@ function killZombie(z){
   G.splats.push({x:z.x,y:z.y,r:z.r*(z.type==='boss'?2:1.1)+rand(0,6),rot:R()*TAU});
   if(G.splats.length>140)G.splats.shift();
   SND.zdie();
+  if(G.plaas)return;   // die toets munt NIKS: geen juwele, munte, drops of ontsluitings
   if(z.type==='boss'){
     G.bossKills++;G.gems.push({x:z.x,y:z.y,v:80});
     G.drops.push({x:z.x+20,y:z.y,k:'biltong',v:30});
@@ -2227,6 +2230,11 @@ function moveVec(){
   return [mx,my];
 }
 function update(dt){
+  if(G.plaas){
+    if(PL.klaar){plaasFinaal();return;}   // toets verby — finaliseer op die raamgrens
+    plaasUpdate(dt);                      // toets-regisseur: stroom, kou, skietpunte, GEHOU
+    if(PL.klaar)return;                   // GEHOU sopas gemerk — moenie verder simuleer nie
+  }
   if(G.dying!=null){ // doodsanimasie: die wêreld draai stadig verder
     G.dying-=dt;
     if(G.spin&&(G.spin.t-=dt)<=0)G.spin=null;
@@ -2271,7 +2279,7 @@ function update(dt){
       G.parts.push({tp:'dot',x:G.x+rand(-7,7),y:G.y+13,vx:rand(-22,22),vy:rand(-12,2),
                     t:0,life:.55,col:'#c2a25f',r:rand(1.8,3.2)});
   }
-  G.r=14;pushOut(G);
+  G.r=G.plaas?26:14;pushOut(G);   // die Opstal-hart is 'n groter teiken — byte lees by die stoeprand
   if(G.inv>0)G.inv-=dt;
   if(G.slowT>0)G.slowT-=dt;
   if(G.slowCd>0)G.slowCd-=dt;
@@ -3823,6 +3831,8 @@ function render(){
       camX=clamp(camX+rand(-G.shake,G.shake),0,Math.max(0,WORLD_W-VW));
       camY=clamp(camY+rand(-G.shake,G.shake),0,Math.max(0,WORLD_H-VH));
     }
+  }else if(scr==='dieplaas'){
+    const pc=plCam();camX=pc[0];camY=pc[1];   // vrye pan — geen speler om aan vas te sweis nie
   }else{
     menuCam+=.0008;
     camX=(WORLD_W-VW)/2+Math.cos(menuCam)*Math.min(500,(WORLD_W-VW)/2);
@@ -3835,9 +3845,20 @@ function render(){
   // elke tweede wêreldpixel — dit is die res van die stapflikker wat oorgebly het.
   camX=Math.round(camX/2)*2;camY=Math.round(camY/2)*2;
   ctx.drawImage(bg,camX*BGS,camY*BGS,VW*BGS,VH*BGS,0,0,VW,VH);
-  if(!G){ctx.fillStyle='rgba(10,14,7,.2)';ctx.fillRect(0,0,VW,VH);ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);return;}
+  if(!G){
+    if(scr==='dieplaas'){          // BOU-modus: wêreld + strukture + spook, geen entiteite
+      ctx.save();ctx.translate(-camX,-camY);
+      drawPlaasWereld(ctx);
+      ctx.restore();
+      ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);
+      drawPlaasHUD();
+      return;
+    }
+    ctx.fillStyle='rgba(10,14,7,.2)';ctx.fillRect(0,0,VW,VH);ctx.fillStyle=vign;ctx.fillRect(0,0,VW,VH);return;
+  }
   const na=nightAlpha();
   ctx.save();ctx.translate(-camX,-camY);
+  if(CHAP===3)drawPlaasWereld(ctx);   // die toets: strukture onder die entiteite
   // ERDVARKGATE — donker gat plus 'n BLEEK uitgegooide sandwal. Die wal is nie versiering nie:
   // 'n donker kol op donker grond snags is 'n onsigbare stadigheid, en 'n stadigheid wat jy nie
   // kon sien nie lees as onverdiende dood. Die wal is wat dit teen die nag laat lees.
@@ -4283,6 +4304,7 @@ function render(){
   drawHUD();
 }
 function drawHUD(){
+  if(G&&G.plaas){drawPlaasHUD();return;}   // die toets het sy eie, kleiner HUD
   const pad=10;
   // XP-balk
   ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(0,0,VW,14);
@@ -4414,6 +4436,551 @@ function drawHUD(){
     ctx.fillStyle='rgba(236,229,204,.45)';
     ctx.beginPath();ctx.arc(joy.ax+joy.dx/d*cl,joy.ay+joy.dy/d*cl,20,0,TAU);ctx.fill();
   }
+}
+
+/* ============================== DIE PLAAS ==============================
+   Bou-en-toets-modus (spek: .claude/PLAAS-SPEC.md). Twee helftes, een getal:
+   BOU — vrye 40px-rooster-plasing in dag-vrede, geen tyd, geen bedreiging.
+   TOETS — LUI DIE KLOK, kies 'n vlak, en kyk of jou werf die horde hou.
+   Goud kom SLEGS uit heldelopies; die plaas munt niks, ooit.
+   Interne sleutel is 'dieplaas' — NOOIT kaal 'plaas' nie (z.type==='plaas'
+   is die basiese zombie). scr==='dieplaas' + G==null is BOU; + G is TOETS.
+   Louw se uitsprake: skade BLY na GEBREEK (herstel teen 30%); GEHOU word
+   gratis reggelap deur die broers. Saamveg kom as 'n latere snit.
+   show('dieplaas') werk sonder 'n DOM-skerm: onbekende naam skakel net al
+   die oorlegskerms af — presies wat die canvas-modus wil hê.               */
+const PL={
+  cam:[1355,1620],          // KAMERA-MIDDELPUNT (nie hoek nie) — plCam() lei die hoek af
+  tool:null,                // null | 'muur' | 'skiet' | 'verkoop'
+  gx:0,gy:0,                // spooksel (sel-koördinate)
+  runN:1,runDx:1,runDy:0,   // muur-lopie vanaf die spook
+  st:new Map(),             // selIdx -> {t:'m'|'sp'|'pm', hp, maxhp}
+  vlak:1, toets:false, tou:0, touTot:0, touT:0, interval:1, vlakN:1,
+  drag:null, px:0,py:0, moved:0, ghostKoste:0,
+};
+function plCam(){  // hoek uit middelpunt, elke raam — oorleef 'n 0x0-laai en resize
+  return [clamp(PL.cam[0]-VW/2,0,Math.max(0,WORLD_W-VW)),
+          clamp(PL.cam[1]-VH/2,0,Math.max(0,WORLD_H-VH))];
+}
+const PL_HART=[1340,1528];        // die opstal se noordstoep — die geparkeerde teiken
+const PL_GEBIED=[24,29,49,49];    // selgrense [c0,r0,c1,r1] = wêreld x[960,1960] y[1160,1960]
+const PL_HEK=[1880,1855];         // een aanlooppunt vir vlakke 1-9 (Plaaspad-hek)
+const PL_KOSTE={m:20,sp:150};
+const PL_HP={m:300,sp:250};
+/* SAVE-migrasie: v3 voeg die plaas by. Geen bestaande veld word aangeraak nie. */
+if(!SAVE.v)SAVE.v=3;
+if(!SAVE.dieplaas)SAVE.dieplaas={s:[],hv:0};   // s=[[t,selIdx,hp]], hv=hoogste vlak gehou
+
+/* KAART3: die plaas self — 'n DIEP kopie van KAART1 se ligte sodat die modus
+   later ligmaste kan byvoeg sonder om hoofstuk 1 se data te besmet. */
+let KAART3=null, PL_ORIG=null, PL_BOUMAP=null;
+function maakKaart3(){
+  if(KAART3)return;
+  KAART3={obst:KAART1.obst, roads:KAART1.roads, stasies:KAART1.stasies,
+          ligte:KAART1.ligte.map(l=>({x:l.x,y:l.y,r:l.r}))};
+}
+/* BOUMAP: 1 = hier mag gebou word. Eenmalig bereken uit die vars plaas-ZMAP
+   VOOR enige muur gemerk word; PL_ORIG onthou die oorspronklike sone per sel
+   sodat verwoes/verkoop dit presies kan teruggee. */
+function maakBoumap(){
+  PL_BOUMAP=new Uint8Array(ZW*ZH); PL_ORIG=new Uint8Array(ZMAP);
+  const hekke=[[1880,1855],[1035,1560],[1460,1235]];
+  const hc=(PL_HART[0]/ZC)|0, hr=(PL_HART[1]/ZC)|0;
+  for(let cy=PL_GEBIED[1];cy<PL_GEBIED[3];cy++)for(let cx=PL_GEBIED[0];cx<PL_GEBIED[2];cx++){
+    const wx=cx*ZC+ZC/2, wy=cy*ZC+ZC/2, zn=ZMAP[cx+cy*ZW];
+    if(zn===Z_WATER||zn===Z_MUUR)continue;
+    if(Math.abs(cx-hc)<=1&&Math.abs(cy-hr)<=1)continue;   // 3x3 om die hart bly oop
+    let ok=true;
+    for(const o of OBST){
+      /* Geen marge om reghoek-geboue nie: hulle is nou self Z_MUUR-selle (reeds
+         hierbo uitgesluit), en 'n marge sou elke muur-gebou-las 'n onbouwbare
+         oop 40px-gang laat leak — dan kan geen seël ooit bestaan nie. */
+      if(o.t==='c'&&dist2(wx,wy,o.x,o.y)<(o.r+24)*(o.r+24)){ok=false;break;}
+      if(o.t==='e'&&((wx-o.x)*(wx-o.x))/((o.rx+24)*(o.rx+24))+((wy-o.y)*(wy-o.y))/((o.ry+24)*(o.ry+24))<1){ok=false;break;}
+    }
+    if(!ok)continue;
+    for(const k2 in STASIES){const s2=STASIES[k2];
+      if(dist2(wx,wy,s2.x,s2.y)<(s2.r+20)*(s2.r+20)){ok=false;break;}}
+    if(!ok)continue;
+    for(const h of hekke)if(dist2(wx,wy,h[0],h[1])<120*120){ok=false;break;}
+    if(!ok)continue;
+    PL_BOUMAP[cx+cy*ZW]=1;
+  }
+}
+/* Muur-sprites: 16 buurmasker-variante (N1 O2 S4 W8), een keer gebak. */
+let PL_MSPR=null;
+function bakMuurSpr(){
+  if(PL_MSPR)return;
+  PL_MSPR=[];
+  for(let m=0;m<16;m++){
+    const c=document.createElement('canvas');c.width=c.height=ZC*2;
+    const g=c.getContext('2d');g.scale(2,2);
+    g.fillStyle='#7b7264';g.fillRect(0,0,ZC,ZC);
+    for(let i=0;i<9;i++){g.fillStyle=i%2?'#877e6f':'#6f675a';
+      g.fillRect(((i*13)%34)+3,((i*7)%34)+3,5,4);}
+    g.fillStyle='rgba(16,22,11,.4)';
+    for(let i=0;i<3;i++)g.fillRect(3+i*13,0,1.5,ZC);     // klip-voeë
+    g.fillStyle='#a89e8c';if(!(m&1))g.fillRect(0,0,ZC,5); // son-kant bo
+    g.fillStyle='rgba(16,22,11,.45)';if(!(m&4))g.fillRect(0,ZC-5,ZC,5);
+    g.strokeStyle='#14180e';g.lineWidth=2.6;
+    g.beginPath();
+    if(!(m&1)){g.moveTo(0,1.3);g.lineTo(ZC,1.3);}
+    if(!(m&4)){g.moveTo(0,ZC-1.3);g.lineTo(ZC,ZC-1.3);}
+    if(!(m&8)){g.moveTo(1.3,0);g.lineTo(1.3,ZC);}
+    if(!(m&2)){g.moveTo(ZC-1.3,0);g.lineTo(ZC-1.3,ZC);}
+    g.stroke();
+    PL_MSPR.push(c);
+  }
+}
+function plMuurMask(ci){
+  const cx=ci%ZW, cy=(ci/ZW)|0;
+  const is=(x,y)=>{const s2=PL.st.get(x+y*ZW);return s2&&s2.t==='m';};
+  let m=0;
+  if(is(cx,cy-1))m|=1; if(is(cx+1,cy))m|=2; if(is(cx,cy+1))m|=4; if(is(cx-1,cy))m|=8;
+  return m;
+}
+/* Intree/uittree. Die struktuur-staat word ALTYD vars vanaf SAVE herbou. */
+function enterPlaas(){
+  maakKaart3();
+  if(CHAP!==3){
+    CHAP=3;
+    OBST=KAART3.obst;ROADS=KAART3.roads;STASIES=KAART3.stasies;HOME_LIGHTS=KAART3.ligte;
+    buildStreke();buildBG();
+    FLOW.fill(0);flowT=0;
+  }
+  MUUR_N=0;
+  /* Die plaasgeboue word Z_MUUR-SELLE (die H2-patroon): die vloeiveld sien nie
+     OBST-reghoeke nie, so 'n horde uit die suide jam permanent teen die opstal
+     se muur en bereik nooit die hart op die noordstoep nie — gemeet: 4 lyfies,
+     120s stilstand, toets eindig nooit. As selle vloei hulle OM die geboue.
+     PL_ORIG is klaar geneem, dus is die herstel-pad korrek; die selle sit nie
+     in PL.st nie en word dus nooit gekou of verkoop nie. Die hart-sel self en
+     sy 3x3 bly oop (nie binne enige OBST-reghoek nie).                        */
+  for(const o of OBST){
+    if(o.t!=='r')continue;
+    const c0=(o.x/ZC)|0, r0=(o.y/ZC)|0, c1=((o.x+o.w-1)/ZC)|0, r1=((o.y+o.h-1)/ZC)|0;
+    for(let cy=r0;cy<=r1;cy++)for(let cx=c0;cx<=c1;cx++){
+      if(cx<0||cx>=ZW||cy<0||cy>=ZH)continue;
+      if(ZMAP[cx+cy*ZW]!==Z_MUUR){ZMAP[cx+cy*ZW]=Z_MUUR;MUUR_N++;}
+    }
+  }
+  maakBoumap();bakMuurSpr();   // NA die geboue-selle: BOUMAP sluit hulle uit as Z_MUUR
+  PL.st.clear();
+  for(const [t,ci,hp] of SAVE.dieplaas.s){
+    PL.st.set(ci,{t,hp,maxhp:t==='m'?PL_HP.m:t==='sp'?PL_HP.sp:0});
+    if(t==='m'){ZMAP[ci]=Z_MUUR;MUUR_N++;}
+  }
+  PL.cam=[1355,1620];   // middelpunt op die opstal
+  PL.tool=null;PL.toets=false;G=null;
+  PL.gx=((PL_HART[0]/ZC)|0)+3;PL.gy=(PL_HART[1]/ZC)|0;PL.runN=1;
+  plBar(true);show('dieplaas');
+}
+function exitPlaas(){
+  if(G&&G.plaas)G=null;
+  PL.toets=false;
+  plaasStoor();
+  plBar(false);const r=document.getElementById('plRes');if(r)r.style.display='none';
+  MUUR_N=0;FLOW.fill(0);
+  setChapter(1);      // CHAP 3 -> 1 herbou streke+bg skoon (geen kortpad, CHAP verskil)
+  buildChapCards();show('chaps');
+}
+function plaasStoor(){
+  SAVE.dieplaas.s=[];
+  for(const [ci,s2] of PL.st)SAVE.dieplaas.s.push([s2.t,ci,Math.round(s2.hp)]);
+  persist();
+}
+/* ---------- plasing ---------- */
+function plKanBou(ci){
+  return !!(PL_BOUMAP&&PL_BOUMAP[ci]===1&&!PL.st.has(ci));
+}
+function plRunSelle(){
+  const uit=[];
+  for(let i=0;i<PL.runN;i++){
+    const cx=PL.gx+PL.runDx*i, cy=PL.gy+PL.runDy*i;
+    if(cx<0||cx>=ZW||cy<0||cy>=ZH)break;
+    uit.push(cx+cy*ZW);
+  }
+  return uit;
+}
+function plBou(){
+  const tipe=PL.tool==='skiet'?'sp':'m';
+  const selle=tipe==='sp'?[PL.gx+PL.gy*ZW]:plRunSelle();
+  if(tipe==='sp'){
+    let n=0;for(const s2 of PL.st.values())if(s2.t==='sp')n++;
+    if(n>=4){plToast('Net 4 skietpunte — een per broer.');return;}
+  }else{
+    let n=0;for(const s2 of PL.st.values())if(s2.t==='m'||s2.t==='pm')n++;
+    if(n+selle.length>150){plToast('Muur-limiet: 150 selle.');return;}
+  }
+  const geldig=selle.filter(plKanBou);
+  if(!geldig.length){plToast('Kan nie hier bou nie.');return;}
+  const koste=geldig.length*PL_KOSTE[tipe];
+  if(SAVE.munte<koste){plToast('Te min munte ('+koste+' nodig).');return;}
+  SAVE.munte-=koste;
+  const hpv=PL_HP[tipe==='m'?'m':'sp'];
+  for(const ci of geldig){
+    PL.st.set(ci,{t:tipe,hp:hpv,maxhp:hpv});
+    if(tipe==='m'){ZMAP[ci]=Z_MUUR;MUUR_N++;}
+  }
+  plaasStoor();plBarVerf();SND.pick();
+}
+function plVerkoop(ci){
+  const s2=PL.st.get(ci);if(!s2)return;
+  if((s2.t==='m'||s2.t==='pm')&&ZMAP[ci]===Z_MUUR){ZMAP[ci]=PL_ORIG[ci];MUUR_N--;}
+  if(s2.t!=='pm')SAVE.munte+=PL_KOSTE[s2.t==='m'?'m':'sp'];  // 100% terug; puin is niks werd nie
+  PL.st.delete(ci);
+  plaasStoor();plBarVerf();SND.coin();
+}
+function plHerstelKoste(){
+  let k=0;
+  for(const s2 of PL.st.values())if(s2.t==='pm')k+=Math.ceil(PL_KOSTE.m*.3);
+  return k;
+}
+function plHerstel(gratis){
+  const k=gratis?0:plHerstelKoste();
+  if(!gratis&&SAVE.munte<k){plToast('Herstel kos '+k+' munte.');return false;}
+  SAVE.munte-=k;
+  for(const [ci,s2] of PL.st){
+    if(s2.t==='pm'){s2.t='m';s2.hp=s2.maxhp=PL_HP.m;ZMAP[ci]=Z_MUUR;MUUR_N++;}
+    else s2.hp=s2.maxhp;
+  }
+  plaasStoor();plBarVerf();return true;
+}
+/* ---------- die toets ---------- */
+function plaasKlok(){
+  if(PL.toets)return;
+  if(!PL.st.size){plToast('Bou eers iets — jy het niks om hulle te keer nie.');return;}
+  for(const s2 of PL.st.values())if(s2.t==='pm'){plToast('Herstel eers die puin.');return;}
+  const N=PL.vlak;
+  newGame(CHARS[0]);
+  /* Die geparkeerde G IS die Opstal: die hele bestaande enjin mik dan vanself.
+     Alles wat newGame uit SAVE.skills/karakter opgestel het, word hier oorskryf. */
+  G.plaas=true;
+  G.weapons.length=0;G.passives={};if(G.dogs)G.dogs.length=0;G.rerolls=0;G.pend=0;
+  G.x=PL_HART[0];G.y=PL_HART[1];G.speed=0;G.dmgMul=0;G.regen=0;
+  G.maxhp=2000;G.hp=2000;G.armor=4;
+  G.time=18*N;
+  G.spawnT=1e9;G.waveT=1e9;G.bossT=1e9;G.eventT=1e9;
+  /* vlak-kurwe (spek): 1-4 met die hand verlaag, dan 14+3.2N; 80/20 vanaf 5 */
+  PL.tou=N===1?5:N===2?9:N===3?13:N===4?16:Math.round(14+3.2*N);
+  PL.touTot=PL.tou;
+  PL.touT=0;PL.interval=Math.max(.35,(30+.9*N)/PL.tou);
+  PL.vlakN=N;PL.toets=true;
+  buildFlow();
+  banner('VLAK '+N+' — HULLE KOM!');SND.alarm();
+  plBarVerf();
+}
+function plaasUpdate(dt){
+  G.spawnT=1e9;G.waveT=1e9;G.bossT=1e9;G.eventT=1e9;   // geen omgewings-drukte nie
+  G.time=18*PL.vlakN;                                   // vries die moeilikheidsskaal
+  if(PL.tou>0){
+    PL.touT-=dt;
+    if(PL.touT<=0){
+      PL.touT=PL.interval;
+      const tipe=(PL.vlakN>=5&&R()<.2)?'runner':'plaas';
+      const voor=G.zombies.length;
+      spawnZombie(tipe,PL_HEK[0]+rand(-50,50),PL_HEK[1]+rand(-50,50),1,true);
+      if(G.zombies.length>voor)PL.tou--;               // CAP-geweier bly in die tou
+    }
+  }
+  /* kou-stelsel: 'n lyf sonder vordering byt die naaste muursel. Begroting
+     per sel: hoogstens 3 kouers, elk 7 LP/s — die VASBYT-les, nie die
+     hooibaal-fout nie. */
+  const kouers={};
+  for(const z of G.zombies){
+    if(z.dead||z.ally>0)continue;
+    const mv=(z.kpx!==undefined)?Math.hypot(z.x-z.kpx,z.y-z.kpy):99;
+    z.kpx=z.x;z.kpy=z.y;
+    if(mv<1.4*dt*60)z.stallT=(z.stallT||0)+dt;else z.stallT=0;
+    if((z.stallT||0)<.35)continue;
+    const cx=(z.x/ZC)|0, cy=(z.y/ZC)|0;
+    let doel=-1,bd=1e9;
+    for(let oy=-1;oy<=1;oy++)for(let ox=-1;ox<=1;ox++){
+      const nx=cx+ox,ny=cy+oy;if(nx<0||nx>=ZW||ny<0||ny>=ZH)continue;
+      const ci=nx+ny*ZW, s2=PL.st.get(ci);
+      if(!s2||s2.t!=='m')continue;
+      const d2=dist2(z.x,z.y,nx*ZC+ZC/2,ny*ZC+ZC/2);
+      if(d2<bd){bd=d2;doel=ci;}
+    }
+    if(doel<0)continue;
+    kouers[doel]=(kouers[doel]||0)+1;
+    if(kouers[doel]>3)continue;
+    const s2=PL.st.get(doel);
+    s2.hp-=7*dt;
+    if(R()<.06&&G.parts.length<280){const dx2=doel%ZW,dy2=(doel/ZW)|0;
+      G.parts.push({tp:'dot',x:dx2*ZC+rand(4,36),y:dy2*ZC+rand(4,36),vx:rand(-40,40),vy:rand(-40,-6),
+        t:0,life:.4,col:'#8f867a',r:rand(1.6,3)});}
+    if(s2.hp<=0)plVerwoes(doel);
+  }
+  /* skietpunte: NPC-broers skiet die naaste lyf binne 340px. Eie projs met
+     voorafberekende skade — NOOIT fireWeapon nie (dit is G-gekoppel). */
+  let si=0;
+  for(const [ci,s2] of PL.st){
+    if(s2.t!=='sp')continue;
+    s2.cd=(s2.cd||0)-dt; si++;
+    if(s2.cd>0)continue;
+    const sx=(ci%ZW)*ZC+ZC/2, sy=((ci/ZW)|0)*ZC+ZC/2;
+    let doel=null,bd=340*340;
+    for(const z of G.zombies){
+      if(z.dead||z.ally>0)continue;
+      const d2=dist2(sx,sy,z.x,z.y);
+      if(d2<bd){bd=d2;doel=z;}
+    }
+    if(!doel)continue;
+    s2.cd=.6;
+    const d=Math.sqrt(bd)||1, a=Math.atan2(doel.y-sy,doel.x-sx);
+    G.projs.push({k:'pellet',x:sx,y:sy-8,vx:Math.cos(a)*560,vy:Math.sin(a)*560,
+      r:5,dmg:22,pierce:0,life:.8,hit:new Set()});
+    if(G.parts.length<280)G.parts.push({tp:'dot',x:sx+Math.cos(a)*12,y:sy-8+Math.sin(a)*12,
+      vx:Math.cos(a)*60,vy:Math.sin(a)*60,t:0,life:.15,col:'#ffe0a0',r:2});
+  }
+  // GEHOU: tou leeg en almal dood
+  if(PL.tou<=0){
+    let lewend=0;
+    for(const z of G.zombies)if(!z.dead&&!(z.ally>0))lewend++;
+    if(lewend===0)plaasGehou();
+  }
+}
+function plVerwoes(ci){
+  const s2=PL.st.get(ci);if(!s2)return;
+  s2.t='pm';s2.hp=0;
+  if(ZMAP[ci]===Z_MUUR){ZMAP[ci]=PL_ORIG[ci];MUUR_N--;}
+  const cx=ci%ZW, cy=(ci/ZW)|0;
+  boomParts(cx*ZC+ZC/2,cy*ZC+ZC/2,16,'#8f867a');
+  if(G)G.shake=Math.max(G.shake,6);
+  SND.boom();banner('DEURBRAAK!');
+}
+/* Die einde word UITGESTEL tot die volgende raamgrens: G word diep binne
+   update()/vasbyt() as klaar bevind, en om hom daar te null laat die res van
+   die raam op null crash (gemeet). Merk net; plaasFinaal ruim op.           */
+function plaasGehou(){if(!PL.toets)return;PL.toets=false;PL.klaar='gehou';}
+function plaasBreek(){if(!PL.toets)return;PL.toets=false;PL.klaar='gebreek';if(G)G.hp=0;}
+function plaasFinaal(){
+  const N=PL.vlakN, gehou=PL.klaar==='gehou';
+  PL.klaar=null;
+  if(gehou){
+    if(N>(SAVE.dieplaas.hv||0))SAVE.dieplaas.hv=N;
+    plHerstel(true);               // GEHOU: die broers lap alles gratis reg (Louw se reël)
+    SND.lvl();
+  }else{
+    SND.boom();                    // GEBREEK: skade en puin BLY — herstel kos munte
+  }
+  G=null;
+  plaasStoor();
+  plaasResult(gehou,N);
+}
+/* ---------- teken (uit render() geroep, binne die wêreld-transform) ---------- */
+function drawPlaasWereld(c){
+  for(const [ci,s2] of PL.st){
+    const x=(ci%ZW)*ZC, y=((ci/ZW)|0)*ZC;
+    if(s2.t==='m'){
+      c.drawImage(PL_MSPR[plMuurMask(ci)],x,y,ZC,ZC);
+      if(s2.hp<s2.maxhp){                                   // krake namate hy knak
+        c.globalAlpha=.55*(1-s2.hp/s2.maxhp)+.1;
+        c.strokeStyle='#14180e';c.lineWidth=1.6;
+        c.beginPath();c.moveTo(x+8,y+6);c.lineTo(x+18,y+20);c.lineTo(x+12,y+34);
+        c.moveTo(x+30,y+4);c.lineTo(x+24,y+22);c.stroke();c.globalAlpha=1;
+      }
+    }else if(s2.t==='pm'){
+      c.fillStyle='rgba(20,24,14,.25)';c.beginPath();c.ellipse(x+ZC/2,y+ZC/2,16,10,0,0,TAU);c.fill();
+      c.fillStyle='#6f675a';
+      c.fillRect(x+6,y+22,10,8);c.fillRect(x+20,y+12,12,9);c.fillRect(x+14,y+28,8,6);
+      c.strokeStyle='#14180e';c.lineWidth=1.5;
+      c.strokeRect(x+6,y+22,10,8);c.strokeRect(x+20,y+12,12,9);
+    }else if(s2.t==='sp'){
+      c.fillStyle='rgba(20,24,14,.3)';c.beginPath();c.ellipse(x+ZC/2,y+ZC/2+8,17,8,0,0,TAU);c.fill();
+      c.fillStyle='#8a7a55';                                 // sandsak-ring
+      for(let i=0;i<6;i++){const a=i/6*TAU;
+        c.fillRect(x+ZC/2+Math.cos(a)*13-5,y+ZC/2+Math.sin(a)*9-3,10,7);}
+      c.strokeStyle='#14180e';c.lineWidth=1.6;
+      for(let i=0;i<6;i++){const a=i/6*TAU;
+        c.strokeRect(x+ZC/2+Math.cos(a)*13-5,y+ZC/2+Math.sin(a)*9-3,10,7);}
+      drawBrother(c,x+ZC/2,y+ZC/2+2,CHARS[1],{s:.95});
+    }
+  }
+  if(scr!=='dieplaas')return;
+  // spook + lopie in bou-modus
+  if(!G&&(PL.tool==='muur'||PL.tool==='skiet')){
+    const selle=PL.tool==='skiet'?[PL.gx+PL.gy*ZW]:plRunSelle();
+    let koste=0;
+    for(const ci of selle){
+      const ok=plKanBou(ci);
+      const x=(ci%ZW)*ZC, y=((ci/ZW)|0)*ZC;
+      c.fillStyle=ok?'rgba(127,201,94,.25)':'rgba(192,80,56,.3)';
+      c.fillRect(x,y,ZC,ZC);
+      c.strokeStyle=ok?'#7fc95e':'#c05038';c.lineWidth=2;
+      c.strokeRect(x+1,y+1,ZC-2,ZC-2);
+      if(ok)koste+=PL_KOSTE[PL.tool==='skiet'?'sp':'m'];
+    }
+    if(PL.tool==='muur'){                                    // lopie-handvatsel
+      const hx=(PL.gx+PL.runDx*PL.runN)*ZC+ZC/2, hy=(PL.gy+PL.runDy*PL.runN)*ZC+ZC/2;
+      c.fillStyle='#e0b64f';c.beginPath();c.arc(hx,hy,9,0,TAU);c.fill();
+      c.strokeStyle='#14180e';c.lineWidth=2;c.beginPath();c.arc(hx,hy,9,0,TAU);c.stroke();
+    }
+    PL.ghostKoste=koste;
+  }else PL.ghostKoste=0;
+  // die hart-merker in bou-modus
+  if(!G){
+    c.strokeStyle='rgba(224,182,79,.6)';c.lineWidth=2;c.setLineDash([6,5]);
+    c.beginPath();c.arc(PL_HART[0],PL_HART[1],30,0,TAU);c.stroke();c.setLineDash([]);
+  }
+}
+function drawPlaasHUD(){
+  const pad=10;
+  ctx.font='19px VT323, monospace';ctx.textAlign='left';
+  if(G&&G.plaas){
+    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(0,0,VW,46);
+    ctx.fillStyle='#ece5cc';ctx.fillText('VLAK '+PL.vlakN,pad,20);
+    ctx.fillStyle='#9aa07f';ctx.fillText('Nog '+Math.max(0,PL.tou)+' op pad',pad,38);
+    if(G.hp<G.maxhp){                       // Opstal-balk: versteek tot eerste skade
+      ctx.fillStyle='#3a1f16';ctx.fillRect(VW/2-130,10,260,16);
+      ctx.fillStyle='#c05038';ctx.fillRect(VW/2-128,12,256*clamp(G.hp/G.maxhp,0,1),12);
+      ctx.fillStyle='#ece5cc';ctx.textAlign='center';ctx.fillText('DIE OPSTAL',VW/2,40);ctx.textAlign='left';
+    }
+  }else{
+    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(0,0,VW,52);
+    ctx.fillStyle='#e0b64f';ctx.fillText('DIE PLAAS — bou. toets. hou.',pad,21);
+    if(PL.toastT>0){PL.toastT-=1/60;
+      ctx.textAlign='center';ctx.fillStyle='#c05038';
+      ctx.fillText(PL.toastMsg,VW/2,VH-90);ctx.textAlign='left';}
+    ctx.textAlign='right';
+    ctx.fillStyle='#ece5cc';ctx.fillText('Munte '+fmt(SAVE.munte)+(PL.ghostKoste?'  (bou: '+PL.ghostKoste+'m)':''),VW-pad,21);
+    ctx.textAlign='left';
+    ctx.fillStyle='#9aa07f';
+    ctx.fillText(SAVE.dieplaas.hv?('Hoogste vlak gehou: '+SAVE.dieplaas.hv):'Nog geen toets gehou nie — bou en lui die klok.',pad,44);
+  }
+}
+/* ---------- DOM: bou-balk + resultaat ---------- */
+function plToast(t){
+  if(G)banner(t);                       // banner() skryf aan G — bestaan net in die toets
+  else{PL.toastMsg=t;PL.toastT=2.2;}    // bou-modus: eie toast, geteken in drawPlaasHUD
+}
+function plBar(aan){
+  let b=document.getElementById('plBar');
+  if(!b){
+    b=document.createElement('div');b.id='plBar';
+    b.innerHTML=
+      '<style>#plBar{position:fixed;left:0;right:0;bottom:0;z-index:8;display:none;'+
+      'justify-content:center;gap:8px;padding:10px;pointer-events:none;flex-wrap:wrap}'+
+      '#plBar .pb{pointer-events:auto;font-family:VT323,monospace;font-size:20px;letter-spacing:1px;'+
+      'background:rgba(27,36,21,.92);color:#e0b64f;border:2px solid #5c4a2e;padding:8px 14px;cursor:pointer}'+
+      '#plBar .pb.aan{border-color:#e0b64f;background:#e0b64f;color:#131a10}'+
+      '#plBar .pb.rooi{color:#c05038}#plBar .pb.groen{border-color:#7fc95e;color:#7fc95e}'+
+      '@media (pointer:coarse){#plBar .pb{font-size:19px;padding:8px 10px}}'+
+      '@media (max-width:560px){#plBar{gap:4px;padding:6px}#plBar .pb{font-size:16px;padding:6px 7px;border-width:1.5px}}'+
+      '#plRes{position:fixed;inset:0;z-index:9;display:none;align-items:center;justify-content:center;'+
+      'background:rgba(8,12,6,.7)}#plRes .pan{background:#1b2415;border:3px solid #5c4a2e;'+
+      'box-shadow:0 0 0 3px #0a0e07;padding:24px 30px;text-align:center;max-width:440px;width:92%}'+
+      '#plRes h2{font-family:"Press Start 2P",monospace;font-size:18px;margin-bottom:10px}'+
+      '#plRes p{font-family:VT323,monospace;font-size:20px;color:#9aa07f;margin:6px 0}'+
+      '#plRes .pb{margin:4px}</style>'+
+      '<button class="pb" id="pbMuur">🧱 Muur 20</button>'+
+      '<button class="pb" id="pbSkiet">🎯 Skietpunt 150</button>'+
+      '<button class="pb" id="pbVerkoop">↩ Verkoop</button>'+
+      '<button class="pb" id="pbBou">✓ BOU</button>'+
+      '<button class="pb" id="pbMin">−</button><button class="pb" id="pbVlak">VLAK 1</button><button class="pb" id="pbPlus">+</button>'+
+      '<button class="pb groen" id="pbKlok">🔔 LUI DIE KLOK</button>'+
+      '<button class="pb rooi" id="pbUit">Terug</button>';
+    document.body.appendChild(b);
+    const res=document.createElement('div');res.id='plRes';
+    res.innerHTML='<div class="pan"><h2 id="prTitel"></h2><p id="prTeks"></p>'+
+      '<div style="margin-top:12px"><button class="pb" id="prWeer"></button>'+
+      '<button class="pb" id="prHerstel" style="display:none"></button>'+
+      '<button class="pb" id="prBou">Bou verder</button></div></div>';
+    document.body.appendChild(res);
+    const T=(id,f)=>document.getElementById(id).onclick=f;
+    T('pbMuur',()=>{PL.tool=PL.tool==='muur'?null:'muur';plBarVerf();});
+    T('pbSkiet',()=>{PL.tool=PL.tool==='skiet'?null:'skiet';plBarVerf();});
+    T('pbVerkoop',()=>{PL.tool=PL.tool==='verkoop'?null:'verkoop';plBarVerf();});
+    T('pbBou',()=>{if(!G&&(PL.tool==='muur'||PL.tool==='skiet'))plBou();});
+    T('pbMin',()=>{PL.vlak=Math.max(1,PL.vlak-1);plBarVerf();});
+    T('pbPlus',()=>{PL.vlak=Math.min(9,PL.vlak+1);plBarVerf();});   // snit 1: vlakke 1-9
+    T('pbKlok',()=>{if(!G)plaasKlok();});
+    T('pbUit',()=>{if(!PL.toets)exitPlaas();});
+    T('prWeer',()=>{document.getElementById('plRes').style.display='none';plaasKlok();});
+    T('prBou',()=>{document.getElementById('plRes').style.display='none';plBarVerf();});
+    T('prHerstel',()=>{if(plHerstel(false)){document.getElementById('plRes').style.display='none';plBarVerf();}});
+  }
+  b.style.display=aan?'flex':'none';
+  if(aan)plBarVerf();
+}
+function plBarVerf(){
+  const q=id=>document.getElementById(id);
+  if(!q('pbMuur'))return;
+  q('pbMuur').className='pb'+(PL.tool==='muur'?' aan':'');
+  q('pbSkiet').className='pb'+(PL.tool==='skiet'?' aan':'');
+  q('pbVerkoop').className='pb'+(PL.tool==='verkoop'?' aan':'');
+  q('pbVlak').textContent='VLAK '+PL.vlak;
+  q('pbBou').style.display=(!G&&(PL.tool==='muur'||PL.tool==='skiet'))?'':'none';
+  const weg=PL.toets?'none':'';
+  q('pbKlok').style.display=weg;q('pbMin').style.display=weg;
+  q('pbPlus').style.display=weg;q('pbVlak').style.display=weg;
+  q('pbMuur').style.display=weg;q('pbSkiet').style.display=weg;
+  q('pbVerkoop').style.display=weg;q('pbUit').style.display=weg;   // niks bou/verkoop/uit tydens die toets
+}
+function plaasResult(gehou,N){
+  const q=id=>document.getElementById(id);
+  q('prTitel').textContent=gehou?'VLAK '+N+' GEHOU!':'GEBREEK';
+  q('prTitel').style.color=gehou?'#7fc95e':'#c05038';
+  q('prTeks').textContent=gehou
+    ?(N>=(SAVE.dieplaas.hv||0)?'Nuwe rekord. Die broers lap alles reg — bou gerus verder.':'Die broers lap alles reg.')
+    :'Die Opstal het geval. Die puin bly lê — herstel voor die volgende toets.';
+  if(gehou&&N<9)PL.vlak=N+1;
+  q('prWeer').textContent=gehou?(N<9?'Toets vlak '+(N+1):'Toets weer'):'Toets weer';
+  const hk=plHerstelKoste();
+  q('prHerstel').style.display=hk>0?'':'none';
+  q('prHerstel').textContent='Herstel alles ('+hk+'m)';
+  q('prWeer').style.display=hk>0?'none':'';   // eers herstel, dan weer toets
+  document.getElementById('plRes').style.display='flex';
+  plBarVerf();
+}
+/* ---------- wysers: pan / spook / handvatsel ---------- */
+function plPointerDown(e){
+  if(scr!=='dieplaas')return false;
+  const mx=e.clientX,my=e.clientY;
+  PL.px=mx;PL.py=my;PL.moved=0;PL.drag='pan';
+  if(!G&&(PL.tool==='muur'||PL.tool==='skiet')){
+    const pc=plCam();
+    if(PL.tool==='muur'){
+      const hx=(PL.gx+PL.runDx*PL.runN)*ZC+ZC/2-pc[0], hy=(PL.gy+PL.runDy*PL.runN)*ZC+ZC/2-pc[1];
+      if(Math.hypot(mx-hx,my-hy)<28){PL.drag='handle';return true;}
+    }
+    const gx=PL.gx*ZC+ZC/2-pc[0], gy=PL.gy*ZC+ZC/2-pc[1];
+    if(Math.hypot(mx-gx,my-gy)<32){PL.drag='ghost';return true;}
+  }
+  return true;
+}
+function plPointerMove(e){
+  if(scr!=='dieplaas'||!PL.drag)return false;
+  const dx=e.clientX-PL.px, dy=e.clientY-PL.py;
+  PL.moved+=Math.abs(dx)+Math.abs(dy);
+  if(PL.drag==='pan'){
+    PL.cam[0]=clamp(PL.cam[0]-dx,VW/2,Math.max(VW/2,WORLD_W-VW/2));
+    PL.cam[1]=clamp(PL.cam[1]-dy,VH/2,Math.max(VH/2,WORLD_H-VH/2));
+  }else if(PL.drag==='ghost'){
+    const pc=plCam();
+    const wx=e.clientX+pc[0], wy=e.clientY-70+pc[1];   // spook sweef 70px bo die vinger
+    PL.gx=clamp((wx/ZC)|0,0,ZW-1);PL.gy=clamp((wy/ZC)|0,0,ZH-1);
+  }else if(PL.drag==='handle'){
+    const pc=plCam();
+    const wx=e.clientX+pc[0], wy=e.clientY-70+pc[1];
+    const ddx=wx-(PL.gx*ZC+ZC/2), ddy=wy-(PL.gy*ZC+ZC/2);
+    if(Math.abs(ddx)>Math.abs(ddy)){PL.runDx=ddx>0?1:-1;PL.runDy=0;PL.runN=clamp(Math.round(Math.abs(ddx)/ZC),1,40);}
+    else{PL.runDx=0;PL.runDy=ddy>0?1:-1;PL.runN=clamp(Math.round(Math.abs(ddy)/ZC),1,40);}
+  }
+  PL.px=e.clientX;PL.py=e.clientY;
+  return true;
+}
+function plPointerUp(e){
+  if(scr!=='dieplaas')return false;
+  if(PL.drag==='pan'&&PL.moved<8&&PL.tool==='verkoop'&&!G){
+    const pc=plCam();
+    const wx=e.clientX+pc[0], wy=e.clientY+pc[1];
+    const ci=((wx/ZC)|0)+((wy/ZC)|0)*ZW;
+    if(PL.st.has(ci))plVerkoop(ci);
+  }
+  PL.drag=null;
+  return true;
 }
 
 /* ============================== UI / SCREENS ============================== */
@@ -4701,6 +5268,26 @@ function buildChapCards(){
     }
     box.appendChild(el);
   }
+  /* DIE PLAAS — bou-en-toets. Altyd oop: dis die familie se werf. */
+  const pl=document.createElement('div');pl.className='card';pl.tabIndex=0;
+  const pc2=document.createElement('canvas');pc2.width=120;pc2.height=64;
+  const g3=pc2.getContext('2d');
+  g3.fillStyle='#2a3520';g3.fillRect(0,0,120,64);
+  g3.fillStyle='#7b7264';for(let i=0;i<5;i++)g3.fillRect(12+i*20,34,16,16);   // muurtjie
+  g3.strokeStyle='#14180e';g3.lineWidth=2;for(let i=0;i<5;i++)g3.strokeRect(12+i*20,34,16,16);
+  g3.fillStyle='#a24d3a';g3.beginPath();g3.moveTo(48,26);g3.lineTo(62,12);g3.lineTo(76,26);g3.closePath();g3.fill();
+  g3.fillStyle='#c9c0aa';g3.fillRect(50,26,24,8);
+  g3.strokeStyle='#14180e';g3.strokeRect(50,26,24,8);
+  pl.appendChild(pc2);
+  const pinfo=document.createElement('div');
+  pinfo.innerHTML='<h3>DIE PLAAS</h3><div class="ttl">Bou. Toets. Hou.</div>'+
+    '<p>Bou jou werf met lopie-goud, lui die klok, en kyk of hy die horde hou.</p>'+
+    (SAVE.dieplaas&&SAVE.dieplaas.hv?'<div class="best">Hoogste vlak gehou: '+SAVE.dieplaas.hv+'</div>':'')+
+    '<span class="key">B</span>';
+  pl.appendChild(pinfo);
+  pl.onclick=()=>enterPlaas();
+  pl.onkeydown=e=>{if(e.key==='Enter')enterPlaas();};
+  box.appendChild(pl);
 }
 function buildCharCards(){
   const box=document.getElementById('charCards');box.innerHTML='';
@@ -5111,12 +5698,15 @@ window.addEventListener('keydown',e=>{
   else if(scr==='chars'&&['1','2','3','4'].includes(k)&&CHARS[+k-1])startRun(CHARS[+k-1]);
   else if(scr==='chaps'&&(k==='1'||k==='enter'||k===' ')){setChapter(1);buildCharCards();show('chars');}
   else if(scr==='chaps'&&k==='2'&&SAVE.h2){setChapter(2);buildCharCards();show('chars');}
+  else if(scr==='chaps'&&k==='b'){enterPlaas();}
+  else if(scr==='dieplaas'&&k==='escape'&&!PL.toets){exitPlaas();}
   else if(scr==='menu'&&(k==='enter'||k===' ')){ac();buildChapCards();show('chaps');}
   else if(scr==='dead'&&(k==='enter'||k===' ')){if(performance.now()-screenAt<250)return;if(lastChar)startRun(lastChar);}
 });
 window.addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur',()=>keys.clear());
 cv.addEventListener('pointerdown',e=>{
+  if(scr==='dieplaas'){plPointerDown(e);try{cv.setPointerCapture(e.pointerId);}catch(_){}return;}
   if(scr!=='play')return;
   if(joy.on&&e.pointerId!==joy.id)return;
   ac();
@@ -5125,12 +5715,16 @@ cv.addEventListener('pointerdown',e=>{
   try{cv.setPointerCapture(e.pointerId);}catch(_){} // vinnige tik kan reeds los wees → NotFoundError
 });
 cv.addEventListener('pointermove',e=>{
+  if(scr==='dieplaas'){plPointerMove(e);return;}
   if(!joy.on||e.pointerId!==joy.id)return;
   joy.dx=e.clientX-joy.ax;joy.dy=e.clientY-joy.ay;
   const d=Math.hypot(joy.dx,joy.dy);
   if(d>70){joy.dx*=70/d;joy.dy*=70/d;}
 });
-function joyEnd(e){if(e.pointerId===joy.id){joy.on=false;joy.dx=0;joy.dy=0;}}
+function joyEnd(e){
+  if(scr==='dieplaas'){plPointerUp(e);return;}
+  if(e.pointerId===joy.id){joy.on=false;joy.dx=0;joy.dy=0;}
+}
 cv.addEventListener('pointerup',joyEnd);
 cv.addEventListener('pointercancel',joyEnd);
 cv.addEventListener('lostpointercapture',joyEnd);
@@ -5143,7 +5737,7 @@ function frame(now){
   const raw=now-last; // rou raamtyd — moet die regte dt bly meet, ook as hitstop later 'n wdt afsplits
   const dt=Math.min(.05,raw/1000);
   last=now;
-  if(scr==='play'&&G){
+  if((scr==='play'||scr==='dieplaas')&&G){
     // stadige-foon wag: hou 'n rollende gemiddelde; bly dit bo 40ms, skakel LOWFX aan vir die res van die lopie
     fxAvg+=(Math.min(raw,120)-fxAvg)*.05;
     if(!LOWFX&&fxAvg>40){LOWFX=true;resize();}

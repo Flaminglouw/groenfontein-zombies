@@ -22,13 +22,21 @@
   #hud .tag{background:rgba(10,16,6,.55);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:6px 12px;font-size:15px;text-shadow:0 1px 2px #000}
   #hud .tag small{display:block;font-size:10px;font-weight:600;color:#ffd23e;letter-spacing:1px}
   #sndB{pointer-events:auto;background:rgba(10,16,6,.55);border:1px solid rgba(255,255,255,.14);border-radius:10px;padding:6px 10px;font-size:16px;cursor:pointer;color:#fff}
+  .shopkop{margin-top:14px;font-size:13px;color:#ffd23e;font-weight:700}
+  .shoprow{display:flex;gap:8px;margin-top:8px}
+  .sbtn{flex:1;background:#1c2a12;border:1px solid #4a6a30;border-radius:10px;padding:8px 5px;color:#cfe0b8;font-size:11px;line-height:1.35;cursor:pointer;font-family:inherit}
+  .sbtn b{display:block;font-size:13px;color:#ffd23e;margin:2px 0}
+  .sbtn.dis{opacity:.4;cursor:default}
 </style>
 </head>
 <body>
 <canvas id="cv"></canvas>
 <div id="hud" class="hidden">
   <div class="tag"><small>VLAK</small><span id="hVlak">1</span></div>
-  <button id="sndB">🔊</button>
+  <div style="display:flex;gap:8px;align-items:flex-start">
+    <div class="tag"><small>MUNTE</small>💰 <span id="hMunt">0</span></div>
+    <button id="sndB">🔊</button>
+  </div>
   <div class="tag"><small>BESTE VLAK</small><span id="hBest">1</span></div>
 </div>
 
@@ -38,7 +46,8 @@
     <div class="sub">Drie Broers teen die Horde — Groenfontein se grondpad</div>
     <p>Sleep <b>links en regs</b> om jou broers te stuur. Hardloop deur die <b style="color:#ffd23e">goeie hekke</b> (+ en ×) en vermy die <b style="color:#ff7a6a">slegtes</b> (− en ÷). Hoe meer broers, hoe harder skiet julle!</p>
     <p class="sub" id="mBest"></p>
-    <button class="btn" id="bSpeel">SPEEL ▶</button><br>
+    <button class="btn" id="bSpeel">SPEEL ▶</button>
+    <div id="shopMenu"></div><br>
     <a class="btn ghost" href="index.html" style="text-decoration:none">← Terug Groenfontein toe</a>
   </div>
 </div>
@@ -48,7 +57,9 @@
     <h2>VLAK KLAAR! 🎉</h2>
     <div class="big" id="wCount"></div>
     <p class="sub" id="wSub">broers het die baas oorleef</p>
-    <button class="btn" id="bVolg">VOLGENDE VLAK ▶</button><br>
+    <p class="sub" id="wMunt" style="color:#ffd23e"></p>
+    <button class="btn" id="bVolg">VOLGENDE VLAK ▶</button>
+    <div id="shopWen"></div><br>
     <a class="btn ghost" href="index.html" style="text-decoration:none">← Terug Groenfontein toe</a>
   </div>
 </div>
@@ -57,7 +68,8 @@
   <div class="panel">
     <h2 style="color:#ff7a6a">DIE HORDE HET GEWEN 💀</h2>
     <p id="dMsg" class="sub"></p>
-    <button class="btn" id="bWeer">PROBEER WEER</button><br>
+    <button class="btn" id="bWeer">PROBEER WEER</button>
+    <div id="shopDood"></div><br>
     <a class="btn ghost" href="index.html" style="text-decoration:none">← Terug Groenfontein toe</a>
   </div>
 </div>
@@ -81,6 +93,7 @@ for(const id in SPRITE_B64){const im=new Image();im.src=SPRITE_B64[id];SPRITES[i
 function spriteReady(id){const im=SPRITES[id];return im&&im.complete&&im.naturalWidth>0&&SPRITE_META[id];}
 
 const TAU=Math.PI*2;
+if(!CanvasRenderingContext2D.prototype.roundRect)CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h){this.rect(x,y,w,h);return this;}; // ou Safari
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
 let W=0,H=0,DPR=1;
 function resize(){
@@ -121,6 +134,35 @@ document.getElementById('sndB').textContent=sndOn?'🔊':'🔇';
 let bestVlak=1;
 try{bestVlak=Math.max(1,parseInt(localStorage.getItem('dbgz_storm_best')||'1',10)||1);}catch(e){}
 function saveBest(v){bestVlak=Math.max(bestVlak,v);try{localStorage.setItem('dbgz_storm_best',String(bestVlak));}catch(e){}}
+
+// ---------- munte + blywende opgraderings (die rede om aan te hou speel) ----------
+const META={b:0,s:0,k:0};let munt=0,runMunt=0;
+try{const m=JSON.parse(localStorage.getItem('dbgz_storm_meta')||'{}');META.b=m.b|0;META.s=m.s|0;META.k=m.k|0;munt=Math.max(0,m.munt|0);}catch(e){}
+function saveMeta(){try{localStorage.setItem('dbgz_storm_meta',JSON.stringify({b:META.b,s:META.s,k:META.k,munt:munt}));}catch(e){}}
+function metaCost(l){return Math.round(20*Math.pow(1.6,l));}
+let lastShownMunt=-1;
+function muntHUD(){if(munt!==lastShownMunt){const el=document.getElementById('hMunt');if(el)el.textContent=munt;lastShownMunt=munt;}}
+function addMunt(n){munt+=n;runMunt+=n;}
+const SHOPDEF=[
+  {k:'b',ikoon:'👨‍👩‍👦',naam:'Meer broers',wat:l=>'begin met '+(5+l*2)},
+  {k:'s',ikoon:'🔫',naam:'Vinniger skiet',wat:l=>'+'+(l*18)+'% vuurspoed'},
+  {k:'k',ikoon:'💪',naam:'Harder klap',wat:l=>'×'+(1+l*.5).toFixed(1)+' baas-skade'},
+];
+function renderShop(){
+  const knope=SHOPDEF.map(d=>{
+    const l=META[d.k],cost=metaCost(l),kan=munt>=cost;
+    return '<button class="sbtn'+(kan?'':' dis')+'" data-k="'+d.k+'">'+d.ikoon+'<b>'+d.naam+'</b>vlak '+l+' → '+d.wat(l+1)+'<b>💰 '+cost+'</b></button>';
+  }).join('');
+  for(const id of['shopMenu','shopWen','shopDood']){
+    const el=document.getElementById(id);
+    if(el)el.innerHTML='<div class="shopkop">💰 '+munt+' munte — koop opgraderings</div><div class="shoprow">'+knope+'</div>';
+  }
+  document.querySelectorAll('.sbtn').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.k,cost=metaCost(META[k]);
+    if(munt<cost)return;
+    munt-=cost;META[k]++;saveMeta();SND.goed();renderShop();muntHUD();
+  });
+}
 
 // ---------- gesaaide RNG (selfde vlak = selfde baan) ----------
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
@@ -210,8 +252,9 @@ function proj(u,dz){const s=KF/(KF+Math.max(-2,dz));return{x:W/2+u*RHALF*s,y:HOR
 
 // ---------- speletjie-staat ----------
 const G={mode:'menu',vlak:1};
-let units=[],mobs=[],gates=[],bullets=[],floats=[],parts=[],boss=null,rails=[];
+let units=[],mobs=[],gates=[],bullets=[],floats=[],parts=[],boss=null,rails=[],helds=[];
 let shake=0,fireAcc=0,tradeAcc=0,winT=0;
+let heldOn=false,heroAcc=0,bossSeen=false,cntPulse=0,railStreak=0,lastRailT=0;
 
 function fmtOp(g){return (g.op==='+'?'+':g.op==='-'?'−':g.op==='x'?'×':'÷')+g.n;}
 function gateCol(g){return g.op==='+'?'#ffd23e':g.op==='x'?'#5ab4ff':g.op==='-'?'#ff5a4a':'#c05aff';}
@@ -243,7 +286,7 @@ function killUnits(n){
 // ---------- vlak-bou ----------
 function genLevel(v){
   const rnd=mulberry32(v*7919+13);
-  gates=[];mobs=[];rails=[];bullets=[];floats=[];parts=[];boss=null;
+  gates=[];mobs=[];rails=[];bullets=[];floats=[];parts=[];boss=null;helds=[];
   const len=210+v*30;
   let exp=5; // verwagte telling as jy goed kies
   let z=26;
@@ -261,11 +304,12 @@ function genLevel(v){
       gates.push({z:z,u0:0,u1:1,...(L?sleg:goed),done:false});
       exp=applyOp(exp,goed);
       z+=26+rnd()*10;
-    }else if(stap==='rail'){ // reling van klein +1'e langs een kant (soos die advertensie)
+    }else if(stap==='rail'){ // reling van klein +hekkies langs een kant (soos die advertensie se leer)
       const n=4+((rnd()*4)|0),ru=side*.72;side=-side;
+      const rv=1+Math.min(4,((v-1)/3)|0); // leer-waarde groei stadig met vlak
       let geplaas=0;
-      for(let i=0;i<n;i++){const rz=z+i*7;if(rz<len-45){rails.push({z:rz,u:ru,done:false});geplaas++;}}
-      exp+=geplaas;
+      for(let i=0;i<n;i++){const rz=z+i*7;if(rz<len-45){rails.push({z:rz,u:ru,n:rv,done:false});geplaas++;}}
+      exp+=geplaas*rv;
       z+=n*7+14;
     }else{ // vyandelike gepeupel op die pad
       const c=Math.max(5,Math.round(exp*(.45+rnd()*.3)));
@@ -281,14 +325,18 @@ function genLevel(v){
   exp*=2;
   boss={z:len,u:0,hp:Math.max(80,Math.round(exp*1.55+v*24)),mhp:0,hit:0,stampT:2.5,dood:0};
   boss.mhp=boss.hp;
+  // die masjiengeweer-kaart (soos die advertensie se 375-soldaat) — halfpad, effens eenkant
+  helds.push({z:Math.round(len*.5),u:rnd()<.5?-.5:.5,done:false});
   return len;
 }
 
 function startVlak(v){
-  G.vlak=v;G.count=5;G.u=0;G.z=0;G.spd=10;G.len=genLevel(v);
+  G.vlak=v;G.count=5+META.b*2;G.u=0;G.z=0;G.spd=10;G.len=genLevel(v);
   steerTarget=0;dragging=false;dragId=null;
-  units=[];addUnits(5);
+  units=[];addUnits(G.count);
   G.mode='speel';winT=0;shake=0;fireAcc=0;tradeAcc=0;
+  heldOn=false;heroAcc=0;bossSeen=false;cntPulse=0;railStreak=0;runMunt=0;
+  saveBest(v);muntHUD();
   document.getElementById('hVlak').textContent=v;
   document.getElementById('hBest').textContent=bestVlak;
   document.getElementById('hud').classList.remove('hidden');
@@ -314,6 +362,12 @@ cv.addEventListener('pointercancel',endDrag);
 
 // ---------- opdatering ----------
 function popFloat(x,y,txt,col,big){floats.push({x,y,txt,col,t:0,big:!!big});}
+function nabyTeiken(){
+  let tgt=null,tdz=30;
+  for(const m of mobs){if(m.count>0){const dz=m.z-G.z;if(dz>2&&dz<tdz){tdz=dz;tgt=m;}}}
+  if(!tgt&&boss&&boss.dood===0){const dz=boss.z-G.z;if(dz>2&&dz<30)tgt=boss;}
+  return tgt;
+}
 function burst(x,y,col,n,sp){for(let i=0;i<n;i++){const a=Math.random()*TAU,v=(.4+Math.random())*(sp||90);parts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-40,t:0,col});}}
 
 function cosmetics(dt){ // animasies wat ook oor die wen/dood-oorgang moet aanhou speel
@@ -325,7 +379,9 @@ function cosmetics(dt){ // animasies wat ook oor die wen/dood-oorgang moet aanho
   for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.t+=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=340*dt;if(p.t>.7)parts.splice(i,1);}
   for(let i=floats.length-1;i>=0;i--){const f=floats[i];f.t+=dt;f.y-=34*dt;if(f.t>1.4)floats.splice(i,1);}
   shake=Math.max(0,shake-dt*22);
+  cntPulse=Math.max(0,cntPulse-dt*2.5);
   if(boss&&boss.dood>0)boss.dood+=dt;
+  if(G.mode==='wen')for(let i=0;i<2;i++)parts.push({x:Math.random()*W,y:-6,vx:(Math.random()-.5)*80,vy:40+Math.random()*90,t:Math.random()*.15,col:['#ffd23e','#8ad4ff','#ff7a6a','#9fbf7a'][(Math.random()*4)|0]});
 }
 function update(dt){
   if(G.mode!=='speel'){if(G.mode==='dood'||G.mode==='wen')cosmetics(dt);return;}
@@ -336,7 +392,8 @@ function update(dt){
   steerTarget=Math.max(-1+rad*.8,Math.min(1-rad*.8,steerTarget));
   G.u+=(steerTarget-G.u)*Math.min(1,dt*10);
 
-  // beweeg vorentoe (stop teen die baas)
+  // beweeg vorentoe (stop teen die baas); tempo klim effens deur die vlak
+  G.spd=10+(G.z/G.len)*3;
   let stopZ=boss&&boss.dood===0?boss.z-5:1e9;
   G.z=Math.min(G.z+G.spd*dt,stopZ);
 
@@ -350,7 +407,8 @@ function update(dt){
       const p=proj(G.u,4);
       const goed=d>=0;
       popFloat(p.x,p.y-90,(d>=0?'+':'')+d+(Math.abs(d)===1?' broer':' broers'),goed?'#ffd23e':'#ff5a4a',true);
-      if(goed){SND.goed();addUnits(d);}else{SND.sleg();killUnits(Math.min(voor,-d));shake=Math.max(shake,5);}
+      cntPulse=1;
+      if(goed){SND.goed();addUnits(d);burst(p.x,p.y-60,'#fff',12,170);}else{SND.sleg();killUnits(Math.min(voor,-d));shake=Math.max(shake,5);}
       // merk die sustershek ook klaar sodat jy nie albei kry nie
       for(const g2 of gates)if(g2!==g&&Math.abs(g2.z-g.z)<0.01)g2.done=true;
       if(G.count<=0)return sterf('Die verkeerde hek het julle uitgewis!');
@@ -358,7 +416,25 @@ function update(dt){
   }
   for(const r of rails){
     if(r.done||Math.abs(r.z-G.z)>0.8)continue;
-    if(Math.abs(G.u-r.u)<rad+.12){r.done=true;G.count++;addUnits(1);SND.goed();const p=proj(r.u,4);popFloat(p.x,p.y-40,'+1','#8ad4ff');}
+    if(Math.abs(G.u-r.u)<rad+.12){
+      r.done=true;const rn=r.n||1;G.count+=rn;addUnits(rn);cntPulse=1;
+      // opeenvolgende leer-hekkies klink al hoe hoër — die klein dopamien-trappie
+      const nou=performance.now();
+      if(nou-lastRailT>900)railStreak=0;
+      lastRailT=nou;railStreak++;
+      tone(520+railStreak*70,.09,'square',.09);
+      const p=proj(r.u,4);popFloat(p.x,p.y-40,'+'+rn,'#8ad4ff');
+    }
+  }
+  // die masjiengeweer-kaart
+  for(const hd of helds){
+    if(hd.done||Math.abs(hd.z-G.z)>1)continue;
+    if(Math.abs(G.u-hd.u)<rad+.24){
+      hd.done=true;heldOn=true;cntPulse=1;SND.wen();
+      const p=proj(hd.u,4);
+      popFloat(p.x,p.y-120,'PA SE MASJIENGEWEER!','#8ad4ff',true);
+      burst(p.x,p.y-70,'#8ad4ff',22,170);
+    }
   }
 
   // gepeupel
@@ -374,7 +450,7 @@ function update(dt){
         tradeAcc-=0.1;
         const k=Math.max(1,Math.ceil(Math.min(G.count,m.count)*.09));
         const kk=Math.min(k,m.count,G.count);
-        m.count-=kk;G.count-=kk;killUnits(kk);
+        m.count-=kk;G.count-=kk;killUnits(kk);addMunt(kk);
         shake=Math.max(shake,3);SND.slaan();
         const p=proj(m.u,dz+4);burst(p.x,p.y-20,'#7a9a48',6,120);
         if(m.count<=0){SND.dood();popFloat(p.x,p.y-60,'horde dood!','#9fbf7a');break;}
@@ -385,6 +461,7 @@ function update(dt){
   // baas
   if(boss&&boss.dood===0){
     const dz=boss.z-G.z;
+    if(!bossSeen&&dz<42){bossSeen=true;SND.baas();shake=Math.max(shake,8);popFloat(W/2,H*.38,'DIE BAAS KOM!','#ff5a4a',true);}
     if(dz<40)boss.z-=1.1*dt;
     boss.hit=Math.max(0,boss.hit-dt*4);
     if(dz<7){ // broers spring in!
@@ -407,23 +484,34 @@ function update(dt){
         if(G.count<=0)return sterf('Die baas het die laaste broer platgetrap!');
       }
     }
-    if(boss.hp<=0){boss.hp=0;boss.dood=.001;SND.wen();shake=12;const p=proj(boss.u,boss.z-G.z+4);burst(p.x,p.y-80,'#ffd23e',40,220);}
+    if(boss.hp<=0){
+      boss.hp=0;boss.dood=.001;SND.wen();shake=12;
+      const p=proj(boss.u,boss.z-G.z+4);burst(p.x,p.y-80,'#ffd23e',40,220);
+      const buit=25+G.vlak*5;addMunt(buit);
+      popFloat(p.x,p.y-140,'+'+buit+' 💰','#ffd23e',true);
+    }
   }
   if(boss&&boss.dood>1.6)wen(); // dood-vordering self gebeur in cosmetics()
 
   // skietwerk — almal skiet, so 'n groot skare maai soos 'n masjiengeweer
   const shooters=Math.min(G.count,60);
-  fireAcc+=dt*shooters*.5;
+  fireAcc+=dt*shooters*.5*(1+META.s*.18);
   while(fireAcc>=1){
     fireAcc--;
-    // naaste teiken voor ons
-    let tgt=null,tdz=30;
-    for(const m of mobs){if(m.count>0){const dz=m.z-G.z;if(dz>2&&dz<tdz){tdz=dz;tgt=m;}}}
-    if(!tgt&&boss&&boss.dood===0){const dz=boss.z-G.z;if(dz>2&&dz<30){tgt=boss;tdz=dz;}}
+    const tgt=nabyTeiken();
     if(tgt){
       const su=G.u+(Math.random()-.5)*rad*1.6;
       bullets.push({u:su,z:G.z+1.5,vz:42,tu:(tgt.u!==undefined?tgt.u:0),tgt,t0z:tgt.z});
       SND.skoot();
+    }
+  }
+  // Pa se masjiengeweer: 'n digte, vinnige straal soos die advertensie se 375-soldaat
+  if(heldOn){
+    heroAcc+=dt*22;
+    while(heroAcc>=1){
+      heroAcc--;
+      const tgt=nabyTeiken();
+      if(tgt){bullets.push({u:G.u+(Math.random()-.5)*.08,z:G.z+2.6,vz:60,tu:(tgt.u!==undefined?tgt.u:0),tgt,hero:true});SND.skoot();}
     }
   }
   for(let i=bullets.length-1;i>=0;i--){
@@ -434,9 +522,10 @@ function update(dt){
     if(b.z>=tz-.5){
       bullets.splice(i,1);
       if(b.tgt===boss){
-        if(boss.dood===0){boss.hp=Math.max(0,boss.hp-1);boss.hit=1;}
+        if(boss.dood===0){boss.hp=Math.max(0,boss.hp-(b.hero?3:1+META.k*.5));boss.hit=1;}
       }else if(b.tgt.count>0){
-        b.tgt.count--;
+        const k=Math.min(b.tgt.count,b.hero?2:1);
+        b.tgt.count-=k;addMunt(k);
         const p=proj(b.tgt.u,tz-G.z+4);burst(p.x,p.y-24,'#7a9a48',3,90);
         if(b.tgt.count<=0){SND.dood();popFloat(p.x,p.y-50,'horde dood!','#9fbf7a');}
       }
@@ -452,14 +541,15 @@ function update(dt){
 }
 
 function sterf(msg){
-  G.mode='dood';SND.verloor();
-  document.getElementById('dMsg').textContent=msg+' (Vlak '+G.vlak+')';
+  G.mode='dood';SND.verloor();saveMeta();renderShop();
+  document.getElementById('dMsg').textContent=msg+' (Vlak '+G.vlak+') — maar jou '+runMunt+' munte is veilig!';
   setTimeout(()=>document.getElementById('ovDood').classList.remove('hidden'),600);
 }
 function wen(){
-  G.mode='wen';saveBest(G.vlak+1);
+  G.mode='wen';saveBest(G.vlak+1);saveMeta();renderShop();
   document.getElementById('wCount').textContent=G.count;
   document.getElementById('wSub').textContent=(G.count===1?'broer':'broers')+' het die baas oorleef';
+  document.getElementById('wMunt').textContent='+'+runMunt+' 💰 munte verdien';
   document.getElementById('hBest').textContent=bestVlak;
   setTimeout(()=>document.getElementById('ovWen').classList.remove('hidden'),500);
 }
@@ -535,6 +625,8 @@ function drawGate(c,g){
   c.fillStyle='rgba(19,26,16,.85)';
   c.fillRect(p0.x,p0.y-hgt,(p1.x-p0.x),hgt*.16);
   c.fillRect(p0.x,p0.y-hgt,4*p0.s,hgt);c.fillRect(p1.x-4*p0.s,p0.y-hgt,4*p0.s,hgt);
+  c.strokeStyle='rgba(255,255,255,.9)';c.lineWidth=Math.max(1,2.5*p0.s);
+  c.strokeRect(p0.x,p0.y-hgt,p1.x-p0.x,hgt);
   if(!g.done){
     const label=(g.op==='+'?'+':g.op==='-'?'−':g.op==='x'?'×':'÷')+g.n;
     outlineText(c,label,(p0.x+p1.x)/2,p0.y-hgt*.45,Math.max(10,hgt*.5),'#fff');
@@ -546,7 +638,24 @@ function drawRail(c,r){
   const p=proj(r.u,dz);const w=RHALF*.26*p.s,hgt=34*p.s;
   c.globalAlpha=(r.done?.2:.85)*Math.max(0,Math.min(1,(85-dz)/20));
   c.fillStyle='#3a8ae8';c.fillRect(p.x-w/2,p.y-hgt,w,hgt);
-  if(!r.done)outlineText(c,'+1',p.x,p.y-hgt*.5,Math.max(8,hgt*.55),'#fff');
+  c.strokeStyle='rgba(255,255,255,.85)';c.lineWidth=Math.max(1,2*p.s);
+  c.strokeRect(p.x-w/2,p.y-hgt,w,hgt);
+  if(!r.done)outlineText(c,'+'+(r.n||1),p.x,p.y-hgt*.5,Math.max(8,hgt*.55),'#fff');
+  c.globalAlpha=1;
+}
+function drawHeld(c,hd){ // die wit soldaat-kaart uit die advertensie, met Pa op
+  const dz=hd.z-G.z;if(dz<-2||dz>85)return;
+  const p=proj(hd.u,dz);
+  const w=Math.max(20,RHALF*.36*p.s),h=w*1.12;
+  c.globalAlpha=(hd.done?.15:1)*Math.max(0,Math.min(1,(85-dz)/20));
+  const bob=Math.sin(performance.now()/300)*4*p.s;
+  const x=p.x-w/2,y=p.y-h-8*p.s+bob;
+  c.fillStyle='#f4f0e2';c.strokeStyle='#131a10';c.lineWidth=Math.max(1.5,3*p.s);
+  c.beginPath();c.roundRect(x,y,w,h,7*p.s);c.fill();c.stroke();
+  if(!hd.done){
+    drawMini(c,'pa',p.x,y+h*.66,h*.55,'idle',0,1,0);
+    outlineText(c,'375',p.x,y+h*.84,h*.22,'#131a10','#f4f0e2');
+  }
   c.globalAlpha=1;
 }
 // vaste diepte-volgorde vir mob-lede (ver eerste) — geen sortering per raam nie
@@ -585,7 +694,7 @@ function drawBoss(c){
     const bx=p.x-bw/2,by=p.y-hh-34;
     c.fillStyle='rgba(19,26,16,.8)';c.fillRect(bx-2,by-2,bw+4,16);
     c.fillStyle='#c02818';c.fillRect(bx,by,bw*boss.hp/boss.mhp,12);
-    outlineText(c,boss.hp,p.x,by-14,22,'#ff6a5a');
+    outlineText(c,Math.ceil(boss.hp),p.x,by-14,22,'#ff6a5a');
   }
 }
 let inGeveg=false;
@@ -597,8 +706,9 @@ function drawUnit(c,u){
 }
 function drawBullet(c,b){
   const p=proj(b.u,b.z-G.z);
-  c.globalAlpha=.9;c.fillStyle='#fff';
-  c.beginPath();c.ellipse(p.x,p.y-20*p.s,3.4*p.s+1,7*p.s+1,0,0,TAU);c.fill();
+  c.globalAlpha=.9;c.fillStyle=b.hero?'#8af4ff':'#fff';
+  const gr=b.hero?1.5:1;
+  c.beginPath();c.ellipse(p.x,p.y-20*p.s,(3.4*p.s+1)*gr,(7*p.s+1)*gr,0,0,TAU);c.fill();
   c.globalAlpha=1;
 }
 
@@ -624,11 +734,16 @@ function render(){
       L.push({d:dz-4,f:()=>drawMobLabel(ctx,m,dz)});
     }
   }
+  for(const hd of helds)L.push({d:hd.z-G.z,f:()=>drawHeld(ctx,hd)});
   for(const b of bullets)L.push({d:b.z-G.z,f:()=>drawBullet(ctx,b)});
   if(inSpel)for(const u of units){const uu=u;L.push({d:4+uu.oz,f:()=>drawUnit(ctx,uu)});}
+  if(inSpel&&heldOn)L.push({d:7.4,f:()=>{ // reuse-Pa hardloop voor die skare met sy masjiengeweer
+    const p=proj(G.u,7.4);
+    drawMini(ctx,'pa',p.x,p.y,120*p.s,inGeveg?'attack':'move',0,1,0);
+  }});
   L.sort((a,b)=>b.d-a.d);
   for(const it of L)it.f();
-  if(inSpel){const cp=proj(G.u,4);outlineText(ctx,G.count,cp.x,cp.y-64,40,'#fff');}
+  if(inSpel){const cp=proj(G.u,4);outlineText(ctx,G.count,cp.x,cp.y-64,40+cntPulse*20,'#fff');}
   for(const p of parts){ctx.globalAlpha=Math.max(0,1-p.t/.7);ctx.fillStyle=p.col;ctx.beginPath();ctx.arc(p.x,p.y,3,0,TAU);ctx.fill();}
   ctx.globalAlpha=1;
   for(const f of floats){
@@ -651,6 +766,7 @@ function frame(t){
   const dt=Math.min(.05,(t-lastT)/1000);lastT=t;
   update(dt);
   render();
+  muntHUD();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -688,6 +804,7 @@ document.getElementById('bVolg').onclick=()=>{ac();startVlak(G.vlak+1);};
 document.getElementById('bWeer').onclick=()=>{ac();startVlak(G.vlak);};
 const mB=document.getElementById('mBest');
 if(bestVlak>1)mB.textContent='Beste vlak tot dusver: '+bestVlak;
+renderShop();
 </script>
 </body>
 </html>
