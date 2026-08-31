@@ -204,7 +204,13 @@ const VLAKKE={
   huis:     [{bed:4},                       {bed:7, koste:{hout:6,klip:3}},  {bed:11,koste:{hout:9,klip:6}}],
   skerm:    [{bed:2},                       {bed:3, koste:{hout:3}},         {bed:4, koste:{hout:5}}],
   tuin:     [{plekke:2},                    {plekke:3,koste:{hout:4}},       {plekke:4,koste:{hout:6,klip:2}}],
-  houthut:  [{plekke:2},                    {plekke:3,koste:{hout:4}},       {plekke:4,koste:{hout:6,klip:2}}],
+  /* HOUTHUT: BEREIK, NIE WERKERS NIE. Gemeet oor 5 dae met 2/3/4 kappers: 71/72/68 hout
+     — meer kappers lewer NIKS ekstra nie, hulle stroop net die eindige bos vinniger.
+     Bome groei NOOIT terug (toestand='weg' is permanent) en naasteBoom() is op 520 vas,
+     dus is die bindende beperking die BEREIK, nie arbeid nie. 'n Plekke-opgradering hier
+     sou die speler laat betaal vir presies niks. */
+  houthut:  [{plekke:2,bereik:520},          {plekke:2,bereik:820,koste:{hout:4}},
+                                             {plekke:2,bereik:1180,koste:{hout:6,klip:2}}],
   klipgroef:[{plekke:2},                    {plekke:3,koste:{hout:5}},       {plekke:4,koste:{hout:7,klip:2}}],
   braai:    [{gl:4},                        {gl:6,  koste:{hout:3,klip:2}},  {gl:8, koste:{hout:5,klip:4}}],
   wagtoring:[{gl:2},                        {gl:3,  koste:{hout:4,klip:3}},  {gl:4, koste:{hout:6,klip:5}}],
@@ -240,6 +246,7 @@ function vDatPresies(t,v){const r=VLAKKE[t];return (r&&v>=1&&v<=r.length)?r[v-1]
 function gBed(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.bed!==undefined)?d.bed:(GT[g.tipe].bed||0);}
 function gPlekke(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.plekke!==undefined)?d.plekke:(GT[g.tipe].plekke||2);}
 function gGl(g){const d=vDat(g.tipe,gVlak(g));return d&&d.gl!==undefined?d.gl:0;}
+function gBereik(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.bereik!==undefined)?d.bereik:520;}
 function opgKoste(g){const d=vDatPresies(g.tipe,gVlak(g)+1);return (d&&d.koste)?d.koste:null;}
 function kanOpgradeer(g){return g.klaar&&!g.opgradeer&&gVlak(g)<maxVlak(g.tipe)&&!!opgKoste(g);}
 
@@ -483,7 +490,7 @@ function soekTaak(m){
   if(m.werkplek&&m.werkplek.klaar){
     const w=GT[m.werkplek.tipe].werk;
     if(w==='kap'){
-      const b=naasteBoom(m.werkplek.x,m.werkplek.y,520);
+      const b=naasteBoom(m.werkplek.x,m.werkplek.y,gBereik(m.werkplek));
       if(b){b.geëis++;b.gemerk=true;return {tipe:'kap',boom:b};}
     }else if(w==='klip'){
       return {tipe:'delf',fase:0};
@@ -1137,6 +1144,7 @@ function kiesGebou(g){
   const rye=[];
   if(G2.bed)rye.push(['Beddens',gBed(g)]);
   if(G2.werk)rye.push(['Werkplekke',g.werkers.length+'/'+gPlekke(g)]);
+  if(g.tipe==='houthut')rye.push(['Kap-bereik',Math.round(gBereik(g))+' tree']);
   if(G2.braai||G2.lig)rye.push(['Humeur',(gGl(g)>0?'+':'')+gGl(g)+' per dag']);
   if(!g.klaar)rye.push([g.opgradeer?'Word opgegradeer':'Word gebou',
                         g.gelewer+'/'+sKoste(g)+' vragte']);
@@ -1412,8 +1420,14 @@ function tekenGebou(g){
   /* Die seleksie-ring word EERSTE geverf sodat hy agter die gebou lê — 'n ring
      bo-oor sou die dak toesmeer. */
   if(GEKIES===g){
-    ctx.strokeStyle='#e8c96a';ctx.lineWidth=2.4;ctx.setLineDash([7,5]);
-    ctx.strokeRect(x-7,y-7,w+14,h+14);ctx.setLineDash([]);
+    /* DEEL DEUR KAM.z. Die doek is met ctx.scale(KAM.z,KAM.z) getransformeer, dus is
+       ELKE maat hier in wereld-eenhede. 'n Foon begin by minZ 0.45 (kamBegin klem dit
+       daarheen), waar 'n lynwydte van 2.4 as 1.08 CSS-pixels verf — die ring was dus
+       op die teiken-toestel feitlik onsigbaar. 'n Koppelvlak-aanduiding moet 'n
+       konstante SKERM-grootte he, nie 'n konstante wereld-grootte nie. */
+    const z=Math.max(KAM.z,.05), r=7/z;
+    ctx.strokeStyle='#e8c96a';ctx.lineWidth=2.4/z;ctx.setLineDash([7/z,5/z]);
+    ctx.strokeRect(x-r,y-r,w+2*r,h+2*r);ctx.setLineDash([]);
   }
   // werpskadu
   ctx.fillStyle='rgba(16,22,11,.28)';
@@ -1527,10 +1541,11 @@ function vlakMerk(g,x,y,w,h){
   const v=gVlak(g);
   if(v<2||!g.klaar)return;
   const n=v-1;
+  const z=Math.max(KAM.z,.05);                 // sien die ring hierbo: konstante SKERM-grootte
   for(let i=0;i<n;i++){
-    const px=x+w/2+(i-(n-1)/2)*9, py=y-6;
-    ctx.fillStyle='#e8c96a';ctx.beginPath();ctx.arc(px,py,3.4,0,TAU);ctx.fill();
-    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.stroke();
+    const px=x+w/2+(i-(n-1)/2)*9/z, py=y-6/z;
+    ctx.fillStyle='#e8c96a';ctx.beginPath();ctx.arc(px,py,3.4/z,0,TAU);ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4/z;ctx.stroke();
   }
 }
 function tekenHoop(soort){
