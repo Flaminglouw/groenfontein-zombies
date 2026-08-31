@@ -2413,7 +2413,12 @@ function update(dt){
     const vsp=G.speed*dashMul*terr;
     G.pvx=mx*vsp;G.pvy=my*vsp;   // speler-snelheid: die spoeger lei hierop, en die jakkals later ook
     G.x+=G.pvx*dt;G.y+=G.pvy*dt;
-    G.face=[mx,my];G.walk+=dt*10;
+    G.face=[mx,my];
+    /* Gang volg die WERKLIKE spoed, nie die klok nie (dieselfde patroon as z.gait by die horde):
+       by basis-spoed 175 gee .06 ~10.5 rame/s — presies die ou now/95-tempo, so die gevoel by
+       normale spoed bly identies — maar Danie se veldskoene/pad/blits laat sy bene nou saamgaan
+       in plaas van te gly. Klem by 18 rame/s hou 'n opgekikkerde speler van stroboskoop af. */
+    G.walk+=Math.min(vsp*.06,18)*dt;
     // stof agter jou op die pad
     if(pz===Z_PAD&&G.parts.length<280&&R()<.28)
       G.parts.push({tp:'dot',x:G.x+rand(-7,7),y:G.y+13,vx:rand(-22,22),vy:rand(-12,2),
@@ -3588,8 +3593,8 @@ function drawSpriteBrother(c,x,y,ch,o){
   if(dieP>0){const d=sm.states.death;st='death';fi=Math.min(d.f-1,Math.floor(dieP*d.f));}
   else if(spin!=null){const d=sm.states.attack;st='attack';const se=spin*spin*(3-2*spin);fi=Math.min(d.f-1,Math.floor(se*d.f));} // smoothstep: stadige optel, vinnige deurswaai, gehoue deurvolg
   else if(o.inv){st='damage';fi=Math.floor(now/110)%sm.states.damage.f;}
-  else if(o.moving&&o.dash&&sm.states.dash){st='dash';fi=Math.floor(now/80)%sm.states.dash.f;}
-  else if(o.moving){st='move';fi=Math.floor(now/95)%sm.states.move.f;}
+  else if(o.moving&&o.dash&&sm.states.dash){st='dash';fi=Math.floor((o.walk||now/80))%sm.states.dash.f;}
+  else if(o.moving){st='move';fi=Math.floor((o.walk||now/95))%sm.states.move.f;}
   else fi=Math.floor(now/150)%sm.states.idle.f;
   const S=sm.states[st];
   const DH=44*s*sm.cellh/112, DW=DH*sm.cellw/sm.cellh;

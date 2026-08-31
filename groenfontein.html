@@ -436,6 +436,19 @@ function hoopVan(soort){
   if(soort==='kos'){const sp=GEB.find(g=>g.klaar&&GT[g.tipe].spens);if(sp)return {x:sp.x,y:sp.y+14};}
   return HOOP[soort];
 }
+/* ============================== MONDE EN KOS-VLOEI ==============================
+   EEN plek wat tel wie eet, en EEN plek wat skat hoeveel kos die plaas kan lewer.
+   Dit is 'n REGISTER, nie 'n reel wat elke nuwe kenmerk oorskryf nie: soldate, helde
+   en diere kan later `MONDBRONNE.push(fn)` doen sonder om die kos-klok aan te raak.
+   Sonder hierdie vorm herskryf elke kenmerk dieselfde twee reels met sy eie definisie
+   van 'n mond, en die laaste een wat land, wen stil-stil. */
+const MONDBRONNE=[];
+function monde(){let n=MENSE.length;for(const f of MONDBRONNE)n+=f()||0;return n;}
+function kosVloei(){                  // geskatte kos per dag uit werkende kosgeboue
+  let v=0;
+  for(const g of GEB)if(g.klaar&&GT[g.tipe].werk==='kos')v+=g.werkers.length*16;
+  return v;
+}
 function voorraad(s){return S[s]||0;}
 function bykom(s,n){S[s]=(S[s]||0)+n;persistSoon();}
 
@@ -1217,8 +1230,9 @@ function update(dt){
        terwyl die humeur klim. Kies die speler self 'Geen', staan die klok wel — die
        -8 kom dan reeds uit die rantsoen-ry. */
     const r=RANTSOEN[S.rant];
-    if(r.mult>0&&MENSE.length){
-      kosKlok+=dt*MENSE.length*r.mult;
+    const mnd=monde();
+    if(r.mult>0&&mnd){
+      kosKlok+=dt*mnd*r.mult;
       if(kosKlok>=60){
         kosKlok-=60;                 // trek af, moenie nulstel nie — anders gaan die res verlore
         if(voorraad('kos')>0){bykom('kos',-1);
@@ -1236,13 +1250,22 @@ function update(dt){
   const p=S.geluk;
   /* Een horlosie, twee rigtings — maar 'n wissel moet die horlosie herstel, anders
      stap iemand op die presiese oomblik weg wat die humeur dip. */
-  const mod=(p>=50&&MENSE.length<bed&&voorraad('kos')>=3)?1:(p<40&&MENSE.length>3)?-1:0;
+  /* DIE HEK IS OP VLOEI, NIE OP DIE RAK NIE. Gemeet met die ou rak-hek: by geluk 100
+     kom daar 38 mense in EEN dag (6 -> 44). Die tussenpose is 51*km en km val van 0.73
+     by geluk 50 na 0.09 by 100 — dus een mens elke 4.6s. Hulle het 176 kos/dag nodig
+     terwyl een tuinier 16 lewer. 'n Vol spens sê niks oor of jy hulle MORE kan voed nie;
+     die produksie-vloei sê dit wel. Plus 'n vloer van 22s op die tussenpose, sodat die
+     vinnigste tempo nog steeds 'n dorp is en nie 'n stortvloed nie. */
+  const mnd=monde();
+  const kanVoed=kosVloei()>=mnd*4 && voorraad('kos')>=6+mnd*0.5;
+  const mod=(p>=50&&MENSE.length<bed&&kanVoed)?1:(p<40&&MENSE.length>3)?-1:0;
   if(mod!==swerwerModus){swerwerModus=mod;swerwerT=mod?18:0;}
-  if(p>=50&&MENSE.length<bed&&voorraad('kos')>=3&&!KLOKAAN){
+  if(p>=50&&MENSE.length<bed&&kanVoed&&!KLOKAAN){
     const km=0.08*Math.pow((100-p)/25,3)+0.09;
     swerwerT-=dt;
     if(swerwerT<=0){
-      swerwerT=51*km;
+      swerwerT=Math.max(22,51*km);      // vloer: nooit vinniger as een mens per 22s
+
       const m=maakMens(1760,WH-60);
       m.taak={tipe:'stap',tx:WERF.x+rand(-70,70),ty:WERF.y+rand(60,160)};
       MENSE.push(m);bykom('kos',-2);
