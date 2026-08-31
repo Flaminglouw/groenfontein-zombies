@@ -22,6 +22,12 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   font-size:19px;font-variant-numeric:tabular-nums;white-space:nowrap}
 #hud .b b{color:var(--goud);font-weight:400}
 #hud .b.gl{cursor:pointer;pointer-events:auto}
+/* Terug-skakel: sonder hom is die speler hier vasgevang (net die blaaier se
+   terug-knoppie werk). Hy sit NA dagwys sodat dagwys se margin-left:auto steeds
+   die hele middel opstoot. */
+#terug{background:rgba(10,14,7,.82);border:2px solid var(--lyn);color:var(--dof);
+  font-size:16px;padding:5px 11px;text-decoration:none;line-height:1;display:block}
+#terug:active{color:#e8dfc6}
 #dagwys{margin-left:auto;background:rgba(10,14,7,.82);border:2px solid var(--lyn);
   padding:3px 9px;font-size:19px;color:var(--dof)}
 
@@ -71,6 +77,7 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <div class="b">👥 <b id="hPop">0</b><span class="dof" id="hBed"></span></div>
   <div class="b gl" id="hGeluk">🙂 <b id="hGl">50</b></div>
   <div id="dagwys">Dag 1</div>
+  <a id="terug" href="index.html" title="Terug na Drie Broers">&larr;</a>
 </div>
 <div id="glkaart"><h4>DIE MENSE SE HUMEUR</h4><div id="glrye"></div></div>
 <div id="prompt"></div>
