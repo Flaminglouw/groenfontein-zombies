@@ -1,0 +1,927 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Die Herbou van Groenfontein</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+:root{
+  --grond:#131a10; --paneel:#1b2415; --paneel2:#222c19; --lyn:#5c4a2e;
+  --ink:#ece5cc; --goud:#e0b64f; --rooi:#c05038; --dof:#9aa07f; --groen:#7fc95e;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,monospace;
+  overflow:hidden;-webkit-user-select:none;user-select:none}
+#cv{position:fixed;inset:0;display:block;touch-action:none}
+#hud{position:fixed;top:0;left:0;right:0;z-index:5;pointer-events:none;
+  display:flex;justify-content:space-between;align-items:flex-start;padding:8px 12px}
+#hud .blok{background:rgba(10,14,7,.78);border:2px solid var(--lyn);padding:5px 12px;font-size:20px}
+#hud b{color:var(--goud);font-weight:400}
+#prompt{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:6;
+  background:var(--paneel);border:3px solid var(--goud);box-shadow:0 0 0 3px #0a0e07;
+  color:var(--goud);padding:9px 18px;font-size:21px;display:none;pointer-events:none;
+  text-align:center;max-width:92vw}
+#balk{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;gap:8px;
+  justify-content:center;padding:10px;pointer-events:none;flex-wrap:wrap}
+#balk .kn{pointer-events:auto;font-family:'VT323',monospace;font-size:21px;letter-spacing:1px;
+  background:rgba(27,36,21,.94);color:var(--goud);border:2px solid var(--lyn);
+  padding:9px 16px;cursor:pointer;min-height:48px}
+#balk .kn.aan{background:var(--goud);color:var(--grond);border-color:var(--goud)}
+@media(max-width:560px){#balk .kn{font-size:18px;padding:8px 11px}}
+#perf{position:fixed;right:10px;bottom:100px;z-index:7;background:rgba(10,14,7,.85);
+  border:2px solid var(--lyn);color:var(--dof);font-size:16px;padding:6px 10px;display:none;
+  font-variant-numeric:tabular-nums;text-align:right;pointer-events:none}
+</style>
+
+<canvas id="cv"></canvas>
+<div id="hud">
+  <div class="blok" id="hudL">GROENFONTEIN</div>
+  <div class="blok" id="hudR">Hout <b id="hHout">0</b></div>
+</div>
+<div id="prompt"></div>
+<div id="balk">
+  <button class="kn" id="kMerk">🪓 Merk bome</button>
+  <button class="kn" id="kPerf">meet</button>
+</div>
+<div id="perf"></div>
+
+<script>
+'use strict';
+/* ============================================================================
+   DIE HERBOU VAN GROENFONTEIN — Fase 1: die lewende werf.
+   Grondwet: .claude/GROENFONTEIN-VISIE.md   Bouplan: .claude/GROENFONTEIN-BLOUDRUK.md
+   Tegnologie: .claude/ontwerp/biblioteke-beleid-2026-08-28.md — geen runtime-deps.
+   GRONDREËL: een eenheid = een vrag = een sigbare voorwerp. Geen getal verander
+   sonder dat 'n lyf beweeg nie. Die stilte-toets is wet.
+   ============================================================================ */
+const TAU=Math.PI*2;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const dist2=(x1,y1,x2,y2)=>(x1-x2)*(x1-x2)+(y1-y2)*(y1-y2);
+/* Geseedde toeval: die wêreld-bak is deterministies (selfde plaas elke keer);
+   spel-toeval loop op 'n aparte stroom sodat herlaai die kaart nie skommel nie. */
+let SAAD=1988;
+function R(){SAAD=(SAAD*1103515245+12345)&0x7fffffff;return SAAD/0x7fffffff;}
+function Rw(i){const v=Math.sin(i*127.1)*43758.5453;return v-Math.floor(v);}   // wêreld-ruis
+const rand=(a,b)=>a+R()*(b-a);
+
+/* ============================== STOOR ============================== */
+const GF_KEY='gf_v1';
+let S={v:1,hout:0,dag:1};
+try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object')S=Object.assign(S,s);}catch(e){}
+let persistT=0;
+function persist(){try{localStorage.setItem(GF_KEY,JSON.stringify(S));}catch(e){}}
+function persistSoon(){persistT=1.5;}   // gebondel — nooit 'n stringify per raam nie
+
+/* ============================== WÊRELD ============================== */
+const WW=3200, WH=2400;                  // Fase 1-wêreld: die werf en sy veld
+const WERF={x:1600,y:1200};              // die hart van die kaart
+/* Die Opstal as RUÏNE — die belofte van die hele spel. Voetstukke is data. */
+const GEBOUE=[
+  {id:'ruine', x:1500,y:1080,w:200,h:120, tipe:'ruine'},
+  {id:'klok',  x:1745,y:1145,w:14,h:14,  tipe:'klok'},
+];
+/* BOME AS DATA — nie in die bak geverf nie, want hulle word gekap en VAL.
+   Elke boom: posisie, grootte, toestand: 'staan'|'val'|'weg', valT, gemerk. */
+const BOME=[];
+{ // bosse om die werf, deterministies gesaai
+  const bosse=[[1150,860,9,150],[2120,900,11,170],[1050,1560,8,140],
+               [2210,1520,10,160],[1650,1780,7,130],[860,1150,6,120]];
+  let bi=0;
+  // windskerm-bome om die werf self — natuurlik vir 'n plaas, en die eerste kap-teikens
+  for(let i=0;i<8;i++){
+    const a=(i/8)*TAU+Rw(i*9.3)*.5, d=300+Rw(i*4.7)*130;
+    BOME.push({x:1600+Math.cos(a)*d, y:1200+Math.sin(a)*d*.75,
+      r:12+Rw(i*2.9)*7, hp:12, toestand:'staan', valT:0, valHoek:0,
+      gemerk:false, geëis:0});
+  }
+  for(const [bx,by,n,sp] of bosse){
+    for(let i=0;i<n;i++){
+      const a=Rw(bi*3.1)*TAU, d=Rw(bi*7.7)*sp;
+      BOME.push({x:bx+Math.cos(a)*d, y:by+Math.sin(a)*d*.8,
+        r:13+Rw(bi*1.3)*9, hp:12, toestand:'staan', valT:0, valHoek:0,
+        gemerk:false, geëis:0});
+      bi++;
+    }
+  }
+}
+/* Kolliders (sirkels + reghoeke) — klein en plat vir Fase 1 */
+function botsBoom(x,y,r){
+  for(const b of BOME){
+    if(b.toestand!=='staan')continue;
+    const rr=b.r*.4+r;
+    if(dist2(x,y,b.x,b.y+4)<rr*rr)return b;
+  }
+  return null;
+}
+
+/* ============================== KAMERA (zoem van dag een) ==============================
+   Middelpunt + zoem. Een setTransform; alles anders teken in wêreld-koördinate.
+   Die biblioteke-beleid se week-1-hek: meet-oorleg is ingebou (knoppie "meet"). */
+const KAM={x:WERF.x,y:WERF.y,z:1, minZ:.5,maxZ:2.2};
+/* Open wyd genoeg dat die werf en sy windskerm inpas, op enige skerm. */
+function kamBegin(){KAM.z=clamp(Math.min(VW/1250,VH/950),KAM.minZ,1.4);kamKlem();}
+let VW=0,VH=0,DPR=1;
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d',{alpha:false});
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  VW=window.innerWidth;VH=window.innerHeight;
+  cv.width=VW*DPR;cv.height=VH*DPR;
+}
+addEventListener('resize',resize);resize();
+function kamKlem(){
+  const hw=VW/2/KAM.z, hh=VH/2/KAM.z;
+  KAM.x=clamp(KAM.x,Math.min(hw,WW/2),Math.max(WW-hw,WW/2));
+  KAM.y=clamp(KAM.y,Math.min(hh,WH/2),Math.max(WH-hh,WH/2));
+}
+function s2w(sx,sy){return [KAM.x+(sx-VW/2)/KAM.z, KAM.y+(sy-VH/2)/KAM.z];}
+function vis(x,y,r){ // culling in wêreld-ruimte
+  const hw=VW/2/KAM.z+r, hh=VH/2/KAM.z+r;
+  return x>KAM.x-hw&&x<KAM.x+hw&&y>KAM.y-hh&&y<KAM.y+hh;
+}
+
+/* ============================== TERREIN-BAK ==============================
+   Die statiese laag word EEN keer gebak (halwe resolusie) — gras, paaie, dam,
+   die ruïne. Bome en alles wat leef, teken bo-oor. */
+const BGS=.5;
+let bg=null;
+function shade(hex,f){const n=parseInt(hex.slice(1),16);
+  const r=clamp(Math.round((n>>16&255)*f),0,255),g=clamp(Math.round((n>>8&255)*f),0,255),
+        b2=clamp(Math.round((n&255)*f),0,255);
+  return 'rgb('+r+','+g+','+b2+')';}
+function bakTerrein(){
+  bg=document.createElement('canvas');bg.width=WW*BGS;bg.height=WH*BGS;
+  const b=bg.getContext('2d');b.scale(BGS,BGS);
+  // veld
+  b.fillStyle='#75884b';b.fillRect(0,0,WW,WH);
+  for(let i=0;i<420;i++){
+    b.fillStyle=Rw(i)<.5?'rgba(96,120,60,.5)':'rgba(122,148,78,.4)';
+    b.beginPath();b.ellipse(Rw(i+1)*WW,Rw(i+9)*WH,30+Rw(i+3)*110,20+Rw(i+7)*70,Rw(i)*3,0,TAU);b.fill();
+  }
+  for(let i=0;i<2600;i++){const x=Rw(i+50)*WW,y=Rw(i+90)*WH;
+    b.strokeStyle='rgba(58,78,38,.5)';b.lineWidth=2;
+    b.beginPath();b.moveTo(x,y);b.lineTo(x+(Rw(i)*4-2),y-4-Rw(i+2)*4);b.stroke();}
+  // grondpad: van die suid-rand op na die werf
+  b.strokeStyle='#a8894c';b.lineWidth=56;b.lineJoin='round';b.lineCap='round';
+  b.beginPath();b.moveTo(1750,WH);b.quadraticCurveTo(1820,1700,1660,1260);b.stroke();
+  b.strokeStyle='#c2a25f';b.lineWidth=38;
+  b.beginPath();b.moveTo(1750,WH);b.quadraticCurveTo(1820,1700,1660,1260);b.stroke();
+  // dam
+  b.fillStyle='#8a7648';b.beginPath();b.ellipse(2350,1750,120,90,0,0,TAU);b.fill();
+  b.fillStyle='#3b6a86';b.beginPath();b.ellipse(2350,1750,104,76,0,0,TAU);b.fill();
+  b.fillStyle='#4d7d99';b.beginPath();b.ellipse(2330,1735,70,46,0,0,TAU);b.fill();
+  // werf-kol
+  b.fillStyle='rgba(178,154,99,.35)';b.beginPath();b.ellipse(WERF.x,WERF.y+30,330,230,0,0,TAU);b.fill();
+  // DIE RUÏNE — die Opstal se geraamte: twee staande mure, 'n gevalle dak, planke
+  const rg=GEBOUE[0];
+  b.fillStyle='rgba(16,22,11,.3)';b.fillRect(rg.x+8,rg.y+rg.h-6,rg.w,14);
+  b.fillStyle='#8a7658';b.fillRect(rg.x,rg.y+40,rg.w,rg.h-40);          // muur-stompe
+  b.fillStyle=shade('#8a7658',.7);b.fillRect(rg.x+rg.w-14,rg.y+40,14,rg.h-40);
+  b.fillStyle='#6f5c44';                                                 // gebreekte bo-rand
+  for(let i=0;i<rg.w;i+=16)b.fillRect(rg.x+i,rg.y+34+Rw(i)*14,12,10);
+  b.fillStyle='#5b4133';b.beginPath();                                   // ingestorte dak-helfte
+  b.moveTo(rg.x+20,rg.y+44);b.lineTo(rg.x+95,rg.y+8);b.lineTo(rg.x+120,rg.y+44);b.closePath();b.fill();
+  b.strokeStyle='rgba(20,26,14,.5)';b.lineWidth=2;
+  for(let i=0;i<5;i++){b.beginPath();b.moveTo(rg.x+30+i*16,rg.y+40);b.lineTo(rg.x+95,rg.y+10);b.stroke();}
+  b.fillStyle='#23303c';b.fillRect(rg.x+24,rg.y+70,26,22);               // leë vensters
+  b.fillRect(rg.x+140,rg.y+70,26,22);
+  b.strokeStyle='#14180e';b.lineWidth=3;b.strokeRect(rg.x,rg.y+40,rg.w,rg.h-40);
+  // los planke in en om die ruïne (die bergings-belofte)
+  b.fillStyle='#8a6f3f';
+  for(let i=0;i<14;i++){const px=rg.x-30+Rw(i+300)*(rg.w+60),py=rg.y+rg.h+6+Rw(i+340)*46;
+    b.save();b.translate(px,py);b.rotate((Rw(i)*0.8-0.4));
+    b.fillRect(-13,-3,26,6);b.strokeStyle='#14180e';b.lineWidth=1.6;b.strokeRect(-13,-3,26,6);
+    b.restore();}
+  // klok-paal
+  const k=GEBOUE[1];
+  b.fillStyle='rgba(16,22,11,.3)';b.beginPath();b.ellipse(k.x+7,k.y+52,12,4,0,0,TAU);b.fill();
+  b.fillStyle='#4a3a22';b.fillRect(k.x+4,k.y,6,52);b.fillRect(k.x-6,k.y-4,26,6);
+  b.fillStyle='#e0b64f';b.beginPath();b.moveTo(k.x+7,k.y+6);b.lineTo(k.x,k.y+22);b.lineTo(k.x+14,k.y+22);b.closePath();b.fill();
+  b.strokeStyle='#14180e';b.lineWidth=2;b.stroke();
+  // stukkende windpomp — hy staan STIL; sy herstel is die belofte
+  b.strokeStyle='#8a8a7a';b.lineWidth=4;
+  b.beginPath();b.moveTo(1885,1085);b.lineTo(1905,975);b.lineTo(1925,1085);b.stroke();
+  b.beginPath();b.moveTo(1893,1050);b.lineTo(1917,1050);b.stroke();
+  b.save();b.translate(1905,975);b.rotate(.5);
+  b.strokeStyle='#9aa0a2';b.lineWidth=3;
+  for(let i=0;i<5;i++){b.rotate(TAU/8);b.beginPath();b.moveTo(0,0);b.lineTo(22,0);b.stroke();}
+  b.restore();  // net 5 van 8 wieke — die res lê in die gras
+  b.strokeStyle='#9aa0a2';b.lineWidth=3;
+  b.beginPath();b.moveTo(1870,1102);b.lineTo(1892,1096);b.stroke();
+  // grens-ink
+  b.strokeStyle='rgba(20,26,14,.9)';b.lineWidth=12;b.strokeRect(6,6,WW-12,WH-12);
+}
+
+/* ============================== MENSE ============================== */
+/* Fiktiewe name (Louw se antwoord 4: eers fiktief, as DATA vir latere ruil). */
+const NAME=['Sarel','Anna','Kobus','Miems','Flip','Lenie'];
+const MENSE=[];
+function maakMens(naam,x,y){
+  return {naam,x,y, sx:0,sy:0, spd:52+R()*10, rig:1,
+    taak:null,          // {tipe:'kap'|'dra'|'stap', ...}
+    dra:null,           // 'blok' | 'plank'
+    tred:R()*TAU, slaan:0, idleT:R()*4, sê:0};
+}
+/* BLOKKE op die grond — elke gevelde boom strooi 3; elkeen is 'n fisiese ding. */
+const BLOKKE=[];
+/* DIE HOOP — die sigbare stapel by die werf. */
+const HOOP={x:1660,y:1180, n:S.hout};   // die stapel is die stoor, sigbaar
+/* DIE BOUSITE — een skerm, op 'n geskrewe kol suid van die ruïne. Vyf sigbare
+   stadiums; materiaal word SIGBAAR aangedra en verteer. Die spook pols totdat
+   die speler hom bevestig. */
+const SKERM_KOL={x:1470,y:1290};
+let BOUSITE=null;   // {gelewer, verbruik, werk, stadium 0..5, bouer}
+const SK_STAD=[1,2,3,5,6];        // kumulatiewe blokke per stadium
+const SK_TYD=[2.5,3,3,3.5,3];     // hamertyd per stadium
+function beginBousite(){
+  if(BOUSITE||S.skerm)return;
+  BOUSITE={gelewer:0,verbruik:0,werk:0,stadium:0,bouer:null,opPad:0};
+  S.g1=1;persistSoon();wysPrompt(null);
+}
+/* DIE KLOK — skuiling-roep. Aan: almal hardloop stoep toe en take VRIES
+   (nooit gekanselleer nie — die bloudruk se wet). Af: terug werk toe. */
+let KLOKAAN=false, klokSwaai=0;
+const STOEP={x:1580,y:1225};
+function luiKlok(){
+  KLOKAAN=!KLOKAAN;klokSwaai=1.6;
+  setTimeout(()=>{if(typeof paSê==='function')paSê(KLOKAAN?PA_KLOK:PA_RUSTIG);},400);
+  klank(KLOKAAN?880:660,.4,.25);setTimeout(()=>klank(KLOKAAN?740:560,.4,.2),260);
+  if(KLOKAAN){for(const h of HOENDERS){h.vx=(h.x<WERF.x?-1:1)*40;h.vy=30;h.stapT=2.5;}}
+  S.g3=1;persistSoon();wysPrompt(null);
+}
+/* DWALERS — die eerste bedreiging. Dryf op geraas af, leiband, geen geveg nog. */
+const DWALERS=[];
+function maakDwaler(){
+  const a=R()*TAU;
+  DWALERS.push({x:WERF.x+Math.cos(a)*950, y:WERF.y+Math.sin(a)*750,
+    tred:R()*TAU, leiband:0, weg:false});
+}
+/* PA — toesig met 'n koffiebeker. Fiktiewe lyne as DATA (Louw se antwoord 4). */
+const PA={x:1568,y:1218, lyn:'', lynT:0, wagT:14, steam:0};
+const PA_LYNE=[
+  'Môre bou ons die dak.',
+  'Mooi so, Sarel.',
+  'Die klok roep óns huis toe, nie húlle nie.',
+  'Stapel hom reguit, jong.',
+  'Koffie eers. Dan die wêreld.',
+  'Jou oupa het daai boom geplant. Kap die ander een.',
+];
+const PA_KLOK='Binne toe! Los die planke!';
+const PA_RUSTIG='Reg, terug werk toe.';
+
+/* ============================== TAKE ============================== */
+/* Klein en eerlik vir aand 1-3: kap gemerkte bome; dra los blokke hoop toe.
+   Eise voorkom dat twee mense dieselfde ding vat. */
+function soekTaak(m){
+  // 0. die bousite soek materiaal? vat van die hoop af (sigbare trip)
+  if(BOUSITE&&BOUSITE.stadium<5){
+    const nodig=SK_STAD[4]-BOUSITE.gelewer-BOUSITE.opPad;
+    if(nodig>0&&HOOP.n>0){
+      BOUSITE.opPad++;
+      return {tipe:'vat',fase:0};
+    }
+    // 0b. die site het materiaal en geen bouer nie? hamer
+    if(!BOUSITE.bouer&&BOUSITE.gelewer>BOUSITE.verbruik){
+      BOUSITE.bouer=m;
+      return {tipe:'bou'};
+    }
+  }
+  // 1. los blok naby? dra dit
+  let beste=null,bd=1e12;
+  for(const bl of BLOKKE){
+    if(bl.geëis)continue;
+    const d=dist2(m.x,m.y,bl.x,bl.y);
+    if(d<bd){bd=d;beste=bl;}
+  }
+  if(beste){beste.geëis=1;return {tipe:'dra',bl:beste,fase:0};}
+  // 2. gemerkte boom met oop kap-plek
+  beste=null;bd=1e12;
+  for(const b of BOME){
+    if(b.toestand!=='staan'||!b.gemerk||b.geëis>=1)continue;
+    const d=dist2(m.x,m.y,b.x,b.y);
+    if(d<bd){bd=d;beste=b;}
+  }
+  if(beste){beste.geëis++;return {tipe:'kap',boom:beste};}
+  return null;
+}
+function stapNa(m,tx,ty,dt){
+  const dx=tx-m.x,dy=ty-m.y,d=Math.hypot(dx,dy);
+  if(d<12)return true;                       // aankoms-radius: nooit 'n dobbelsteen nie
+  let vx=dx/d,vy=dy/d;
+  /* Sagte omleiding om staande bome. Die kant word met die kruisproduk gekies
+     sodat ons om die boom draai NA die doel se kant toe — 'n vaste handigheid
+     het 'n draer permanent om 'n windskerm-boom laat wentel (gemeet). Naby die
+     doel ignoreer ons bome heeltemal; jy kan tot by jou eie hoop loop. */
+  if(d>40){
+    const voor=botsBoom(m.x+vx*16,m.y+vy*16,7);
+    if(voor){
+      const nx=voor.x-m.x, ny=voor.y+4-m.y;
+      const kant=(nx*dy-ny*dx)>=0?1:-1;
+      const px=-ny*kant, py=nx*kant, pl=Math.hypot(px,py)||1;
+      vx=vx*.35+px/pl*.65; vy=vy*.35+py/pl*.65;
+      const vl=Math.hypot(vx,vy)||1; vx/=vl; vy/=vl;
+    }
+  }
+  const sp=m.spd*(m.dra?0.78:1);
+  m.x+=vx*sp*dt;m.y+=vy*sp*dt;
+  m.rig=vx<0?-1:1;
+  m.tred+=dt*(m.dra?6.4:7.4);
+  return false;
+}
+function mensTik(m,dt){
+  /* Skuiling-vlug oorheers alles. Take word GEVRIES, nooit gekanselleer nie. */
+  if(KLOKAAN||m.vlug>0){
+    if(m.vlug>0&&!KLOKAAN)m.vlug-=dt;
+    if(m.dra){ // los die vrag waar jy staan — dit bly lê as 'n opteltaak
+      BLOKKE.push({x:m.x,y:m.y,geëis:0});m.dra=null;
+      if(m.taak&&m.taak.tipe==='dra')m.taak=null;
+    }
+    stapNa(m,STOEP.x+((m.stoepPlek!==undefined)?m.stoepPlek:(m.stoepPlek=rand(-46,46))),
+           STOEP.y+rand(-2,2),dt);
+    return;
+  }
+  m.stoepPlek=undefined;
+  if(!m.taak&&m.dra){ // vangnet: 'n vrag sonder taak stap hoop toe — niks raak ooit weg nie
+    m.taak={tipe:'dra',bl:null,fase:1,tx:HOOP.x+rand(-8,8),ty:HOOP.y+rand(-4,10)};
+  }
+  if(!m.taak){
+    m.idleT-=dt;
+    if(m.idleT<=0){m.taak=soekTaak(m);m.idleT=1.2+R()*1.5;
+      if(!m.taak){ // luier: drentel effens, kyk rond
+        const a=R()*TAU;m.taak={tipe:'stap',tx:clamp(m.x+Math.cos(a)*60,WERF.x-300,WERF.x+300),
+          ty:clamp(m.y+Math.sin(a)*60,WERF.y-220,WERF.y+260),luier:true};
+      }}
+    return;
+  }
+  const t=m.taak;
+  if(t.tipe==='stap'){
+    if(stapNa(m,t.tx,t.ty,dt))m.taak=null;
+  }
+  else if(t.tipe==='vat'){ // hoop → bousite, sigbaar
+    if(!BOUSITE){m.taak=null;return;}
+    if(t.fase===0){
+      if(stapNa(m,HOOP.x,HOOP.y+6,dt)){
+        if(HOOP.n<=0){BOUSITE.opPad--;m.taak=null;return;}
+        HOOP.n--;S.hout--;persistSoon();
+        m.dra='blok';t.fase=1;
+        t.tx=SKERM_KOL.x+rand(-10,10);t.ty=SKERM_KOL.y+rand(4,14);
+      }
+    }else{
+      if(stapNa(m,t.tx,t.ty,dt)){
+        m.dra=null;BOUSITE.gelewer++;BOUSITE.opPad--;
+        spanne(SKERM_KOL.x,SKERM_KOL.y,4,'#c9b06a');
+        klank(340,.05,.08);m.taak=null;
+      }
+    }
+  }
+  else if(t.tipe==='bou'){ // hamer, stadium vir stadium
+    if(!BOUSITE){m.taak=null;return;}
+    if(stapNa(m,SKERM_KOL.x+18,SKERM_KOL.y+10,dt)||dist2(m.x,m.y,SKERM_KOL.x,SKERM_KOL.y)<40*40){
+      const st=BOUSITE.stadium;
+      if(st>=5){BOUSITE.bouer=null;m.taak=null;return;}
+      const nodig=SK_STAD[st];
+      if(BOUSITE.gelewer<nodig){ // wag sigbaar: kopkrap is die hongersnood-sein
+        m.slaan=0;m.tred+=dt*.8;return;
+      }
+      m.slaan+=dt;
+      if(m.slaan>=.8){m.slaan=0;spanne(SKERM_KOL.x+rand(-14,14),SKERM_KOL.y-10,2,'#c9b06a');
+        klank(210+st*30,.05,.1);}
+      BOUSITE.werk+=dt;
+      if(BOUSITE.werk>=SK_TYD[st]){
+        BOUSITE.werk=0;BOUSITE.verbruik=nodig;BOUSITE.stadium++;
+        klank(520,.1,.12);
+        if(BOUSITE.stadium>=5){
+          S.skerm=1;persistSoon();BOUSITE.bouer=null;BOUSITE=null;m.taak=null;
+          paSê('Die eerste dak. Nou slaap almal binne.');
+        }
+      }
+    }
+  }
+  else if(t.tipe==='kap'){
+    const b=t.boom;
+    if(b.toestand!=='staan'){b.geëis--;m.taak=null;return;}
+    if(stapNa(m,b.x-14*(m.x<b.x?1:-1),b.y+10,dt)||dist2(m.x,m.y,b.x,b.y)<30*30){
+      // kap: 12 slae teen 0.9s
+      m.slaan+=dt;
+      if(m.slaan>=0.9){
+        m.slaan=0;b.hp--;
+        b.skud=0.14;
+        spanne(b.x+rand(-8,8),b.y-b.r,3,'#c9b06a');
+        klank(160+R()*40,.06,.12);
+        if(b.hp<=0){ // DIE BOOM VAL — die groot payoff
+          b.toestand='val';b.valT=0;b.valHoek=(m.x<b.x?1:-1)*(0.9+R()*.3);
+          b.gemerk=false;b.geëis=0;m.taak=null;
+        }
+      }
+    }
+  }
+  else if(t.tipe==='dra'){
+    const bl=t.bl;
+    if(t.fase===0){ // stap na die blok
+      if(stapNa(m,bl.x,bl.y,dt)){
+        const i=BLOKKE.indexOf(bl);if(i>=0)BLOKKE.splice(i,1);
+        m.dra='blok';t.fase=1;
+      }
+    }else{ // dra hoop toe — teiken is EEN keer gegooi, nie elke raam nie
+      if(t.tx===undefined){t.tx=HOOP.x+rand(-8,8);t.ty=HOOP.y+rand(-4,10);}
+      if(stapNa(m,t.tx,t.ty,dt)){
+        m.dra=null;HOOP.n++;S.hout++;persistSoon();
+        spanne(HOOP.x,HOOP.y-8,4,'#c9b06a');
+        klank(300,.05,.08);
+        m.sê=1.2;                       // fluit-noot: tevrede draer
+        m.taak=null;
+      }
+    }
+  }
+}
+
+/* ============================== AMBIENT (die stilte-toets se vloer) ============================== */
+const HOENDERS=[];
+for(let i=0;i<5;i++)HOENDERS.push({x:WERF.x+rand(-160,60),y:WERF.y+rand(40,150),
+  vx:0,vy:0,pik:R()*2,stapT:R()*3});
+const ROOK=[];      // uit die ruïne se skoorsteen
+const SPANNE=[];    // klein stof/splinter-deeltjies
+function spanne(x,y,n,col){
+  for(let i=0;i<n;i++)if(SPANNE.length<220)
+    SPANNE.push({x:x+rand(-4,4),y:y+rand(-4,4),vx:rand(-30,30),vy:rand(-40,-6),
+      t:0,life:.4+R()*.3,col,r:1.6+R()*1.8});
+}
+const KRAAIE=[{a:R()*TAU,r:260,h:0}, {a:R()*TAU,r:300,h:0.4}];
+
+/* ============================== KLANK (ZzFX-agtig, piepklein) ============================== */
+let AC=null;
+function klank(f,dur,vol){
+  try{
+    if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state==='suspended')return;
+    const o=AC.createOscillator(),g=AC.createGain();
+    o.type='triangle';o.frequency.value=f;
+    g.gain.setValueAtTime(vol,AC.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+dur);
+    o.connect(g);g.connect(AC.destination);
+    o.start();o.stop(AC.currentTime+dur);
+  }catch(e){}
+}
+addEventListener('pointerdown',()=>{try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==='suspended')AC.resume();}catch(e){}},{once:true});
+
+/* ============================== INSETTE: pan / knyp / merk ============================== */
+let MODUS=null;   // null | 'merk'
+const vingers=new Map();
+let knypAfst=0, sleep=false, sleepBeweeg=0;
+cv.addEventListener('pointerdown',e=>{
+  vingers.set(e.pointerId,[e.clientX,e.clientY]);
+  try{cv.setPointerCapture(e.pointerId);}catch(_){}
+  if(vingers.size===2){
+    const v=[...vingers.values()];
+    knypAfst=Math.hypot(v[0][0]-v[1][0],v[0][1]-v[1][1]);
+  }
+  sleep=true;sleepBeweeg=0;
+});
+cv.addEventListener('pointermove',e=>{
+  if(!vingers.has(e.pointerId))return;
+  const ou=vingers.get(e.pointerId);
+  const dx=e.clientX-ou[0],dy=e.clientY-ou[1];
+  vingers.set(e.pointerId,[e.clientX,e.clientY]);
+  if(vingers.size===2){ // knyp-zoem om die middelpunt van die knyp
+    const v=[...vingers.values()];
+    const nu=Math.hypot(v[0][0]-v[1][0],v[0][1]-v[1][1]);
+    if(knypAfst>0){
+      const mx=(v[0][0]+v[1][0])/2,my=(v[0][1]+v[1][1])/2;
+      const [wx,wy]=s2w(mx,my);
+      KAM.z=clamp(KAM.z*(nu/knypAfst),KAM.minZ,KAM.maxZ);
+      KAM.x=wx-(mx-VW/2)/KAM.z;KAM.y=wy-(my-VH/2)/KAM.z;
+      kamKlem();
+    }
+    knypAfst=nu;sleepBeweeg=99;
+    return;
+  }
+  sleepBeweeg+=Math.abs(dx)+Math.abs(dy);
+  KAM.x-=dx/KAM.z;KAM.y-=dy/KAM.z;kamKlem();
+});
+function los(e){
+  vingers.delete(e.pointerId);
+  if(vingers.size<2)knypAfst=0;
+  if(sleep&&sleepBeweeg<9){ // 'n tik, nie 'n sleep nie
+    const [wx,wy]=s2w(e.clientX,e.clientY);
+    tik(wx,wy);
+  }
+  sleep=vingers.size>0;
+}
+cv.addEventListener('pointerup',los);
+cv.addEventListener('pointercancel',los);
+cv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const [wx,wy]=s2w(e.clientX,e.clientY);
+  KAM.z=clamp(KAM.z*(e.deltaY<0?1.12:0.89),KAM.minZ,KAM.maxZ);
+  KAM.x=wx-(e.clientX-VW/2)/KAM.z;KAM.y=wy-(e.clientY-VH/2)/KAM.z;
+  kamKlem();
+},{passive:false});
+function tik(wx,wy){
+  // die klok is altyd tikbaar
+  const k=GEBOUE[1];
+  if(dist2(wx,wy,k.x+7,k.y+14)<48*48){luiKlok();return;}
+  // die skerm-spook, solank hy pols
+  if(!S.skerm&&!BOUSITE&&dist2(wx,wy,SKERM_KOL.x,SKERM_KOL.y)<60*60){beginBousite();return;}
+  if(MODUS==='merk'){
+    let beste=null,bd=44*44;
+    for(const b of BOME){
+      if(b.toestand!=='staan')continue;
+      const d=dist2(wx,wy,b.x,b.y-10);
+      if(d<bd){bd=d;beste=b;}
+    }
+    if(beste){beste.gemerk=!beste.gemerk;klank(beste.gemerk?520:260,.05,.1);}
+  }
+}
+document.getElementById('kMerk').onclick=()=>{
+  MODUS=MODUS==='merk'?null:'merk';
+  document.getElementById('kMerk').className='kn'+(MODUS==='merk'?' aan':'');
+  wysPrompt(MODUS==='merk'?'Tik ’n boom om hom vir kap te merk.':null);
+};
+/* meet-oorleg: die week-1 S25-hek (biblioteke-beleid) */
+let METE=false, mTye=[];
+document.getElementById('kPerf').onclick=()=>{
+  METE=!METE;mTye=[];
+  document.getElementById('kPerf').className='kn'+(METE?' aan':'');
+  document.getElementById('perf').style.display=METE?'block':'none';
+};
+function wysPrompt(t){
+  const p=document.getElementById('prompt');
+  if(!t){p.style.display='none';return;}
+  p.textContent=t;p.style.display='block';
+}
+
+/* ============================== OPDATEER ============================== */
+let T=0;   // lopende regie-klok vir die openingsbeats
+function paSê(t){PA.lyn=t;PA.lynT=4.5;}
+function update(dt){
+  T+=dt;
+  for(const m of MENSE)mensTik(m,dt);
+  // --- regie: die eerste beats, een keer per stoor ---
+  if(!S.g1&&!S.skerm&&T>14&&!BOUSITE)wysPrompt('Twee slaap buite. Tik die pulserende kol om ’n skerm te bou.');
+  if(!S.g3&&T>55&&DWALERS.length===0){maakDwaler();
+    wysPrompt('’n Dwaler. Tik die klok — almal hardloop skuiling toe.');}
+  // --- dwalers ---
+  for(const d of DWALERS){
+    d.tred+=dt*4.6;
+    let doel=null,bd=1e12;
+    for(const m of MENSE){const q=dist2(d.x,d.y,m.x,m.y);if(q<bd){bd=q;doel=m;}}
+    if(KLOKAAN||bd>560*560){d.leiband+=dt;}else d.leiband=0;
+    if(d.leiband>9)d.weg=true;
+    let vx,vy;
+    if(d.weg){vx=(d.x-WERF.x);vy=(d.y-WERF.y);}
+    else if(doel&&!KLOKAAN){vx=doel.x-d.x;vy=doel.y-d.y;}
+    else{vx=Math.cos(d.tred*.2);vy=Math.sin(d.tred*.2);}
+    const l=Math.hypot(vx,vy)||1;
+    d.x+=vx/l*16*dt;d.y+=vy/l*16*dt;
+    // 'n mens naby? hy skrik en vlug (los sy vrag — die klok-les leer homself)
+    if(!KLOKAAN)for(const m of MENSE){
+      if(dist2(d.x,d.y,m.x,m.y)<95*95)m.vlug=Math.max(m.vlug||0,3);
+    }
+    if(d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)>1300*1300)d.dood=true;
+  }
+  for(let i=DWALERS.length-1;i>=0;i--)if(DWALERS[i].dood)DWALERS.splice(i,1);
+  // --- klok en Pa ---
+  if(klokSwaai>0)klokSwaai-=dt;
+  PA.steam+=dt;
+  if(PA.lynT>0)PA.lynT-=dt;
+  else{PA.wagT-=dt;
+    if(PA.wagT<=0){PA.wagT=16+R()*14;
+      paSê(KLOKAAN?PA_KLOK:PA_LYNE[(R()*PA_LYNE.length)|0]);}}
+  // bome wat val
+  for(const b of BOME){
+    if(b.skud>0)b.skud-=dt;
+    if(b.toestand==='val'){
+      b.valT+=dt;
+      if(b.valT>=1.2){
+        b.toestand='weg';
+        spanne(b.x,b.y,14,'#c2a25f');
+        klank(70,.25,.22);
+        for(let i=0;i<3;i++)BLOKKE.push({x:b.x+rand(-26,26)+b.valHoek*30,
+          y:b.y+rand(-8,22),geëis:0});
+      }
+    }
+  }
+  // hoenders
+  for(const h of HOENDERS){
+    h.stapT-=dt;h.pik+=dt*5;
+    if(h.stapT<=0){h.stapT=1.5+R()*2.5;
+      const a=R()*TAU;h.vx=Math.cos(a)*14;h.vy=Math.sin(a)*10;
+      if(R()<.4){h.vx=0;h.vy=0;}}
+    h.x=clamp(h.x+h.vx*dt,WERF.x-220,WERF.x+140);
+    h.y=clamp(h.y+h.vy*dt,WERF.y+20,WERF.y+190);
+  }
+  // rook
+  if(ROOK.length<10&&R()<dt*2.2)ROOK.push({x:1585+rand(-3,3),y:1058,t:0,life:2.6+R()});
+  for(const r of ROOK){r.t+=dt;r.x+=Math.sin(r.t*2+r.life)*6*dt;r.y-=14*dt;}
+  for(let i=ROOK.length-1;i>=0;i--)if(ROOK[i].t>=ROOK[i].life)ROOK.splice(i,1);
+  // deeltjies
+  for(const p of SPANNE){p.t+=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=40*dt;}
+  for(let i=SPANNE.length-1;i>=0;i--)if(SPANNE[i].t>=SPANNE[i].life)SPANNE.splice(i,1);
+  // kraaie
+  for(const k of KRAAIE)k.a+=dt*.35;
+  // mense se sê-tydjie
+  for(const m of MENSE)if(m.sê>0)m.sê-=dt;
+  if(persistT>0){persistT-=dt;if(persistT<=0)persist();}
+  document.getElementById('hHout').textContent=S.hout;
+}
+
+/* ============================== TEKEN ============================== */
+function tekenMens(m){
+  const wip=Math.sin(m.tred)* (m.taak&&m.taak.tipe!=='stap'||m.dra?1.4:1.0);
+  const x=m.x,y=m.y;
+  ctx.fillStyle='rgba(10,14,7,.35)';
+  ctx.beginPath();ctx.ellipse(x,y+2,8,3,0,0,TAU);ctx.fill();
+  ctx.save();ctx.translate(x,y+wip*.4);
+  if(m.rig<0)ctx.scale(-1,1);
+  // bene
+  const tred=Math.sin(m.tred);
+  ctx.fillStyle='#2a1f12';
+  ctx.fillRect(-4+tred*2.5,-6,3.5,7);ctx.fillRect(1-tred*2.5,-6,3.5,7);
+  // lyf
+  ctx.fillStyle=m.klr||'#4a5670';ctx.fillRect(-5,-19,10,13);
+  ctx.fillStyle='rgba(226,240,180,.35)';ctx.fillRect(-5,-19,2.5,13);
+  // kop
+  ctx.fillStyle='#dfa987';ctx.fillRect(-4,-27,8,8);
+  ctx.fillStyle=m.hare||'#3b2b20';ctx.fillRect(-4,-29,8,3);
+  // arms + gereedskap
+  if(m.taak&&m.taak.tipe==='kap'&&!m.dra){
+    const sw=Math.sin(m.slaan/0.9*Math.PI);        // byl-swaai
+    ctx.save();ctx.translate(4,-16);ctx.rotate(-.6+sw*1.5);
+    ctx.fillStyle='#5d4a2c';ctx.fillRect(0,-1.6,13,3.2);
+    ctx.fillStyle='#9aa0a2';ctx.fillRect(11,-4.5,5,7);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.strokeRect(11,-4.5,5,7);
+    ctx.restore();
+  }else{
+    ctx.fillStyle=m.klr||'#4a5670';
+    ctx.fillRect(-7,-17,3,8);ctx.fillRect(4,-17,3,8);
+  }
+  // die vrag — die grondreël, sigbaar
+  if(m.dra==='blok'){
+    ctx.fillStyle='#8a6f3f';ctx.fillRect(-8,-33,17,7);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;ctx.strokeRect(-8,-33,17,7);
+  }
+  // kontoer
+  ctx.strokeStyle='rgba(20,24,14,.75)';ctx.lineWidth=2;
+  ctx.strokeRect(-5,-19,10,13);ctx.strokeRect(-4,-27,8,8);
+  ctx.restore();
+  // fluit-noot
+  if(m.sê>0){
+    ctx.fillStyle='rgba(236,229,204,'+Math.min(1,m.sê)+')';
+    ctx.font='15px VT323, monospace';ctx.textAlign='center';
+    ctx.fillText('♪',x+8,y-34-(1.2-m.sê)*14);
+  }
+  // naam by inzoem
+  if(KAM.z>1.5){
+    ctx.font='13px VT323, monospace';ctx.textAlign='center';
+    ctx.fillStyle='rgba(236,229,204,.75)';ctx.fillText(m.naam,x,y-36);
+  }
+}
+function tekenBoom(b){
+  if(b.toestand==='weg')return;
+  const skud=b.skud>0?Math.sin(b.skud*60)*2:0;
+  let hoek=0;
+  if(b.toestand==='val'){
+    const t=Math.min(1,b.valT/1.2);
+    hoek=b.valHoek*(t*t)*(Math.PI/2*.92);
+  }
+  ctx.save();ctx.translate(b.x+skud,b.y);
+  ctx.fillStyle='rgba(10,14,7,.3)';
+  ctx.beginPath();ctx.ellipse(4,6,b.r*.9,b.r*.34,0,0,TAU);ctx.fill();
+  ctx.rotate(hoek);
+  ctx.fillStyle='#3a2a18';ctx.fillRect(-2.5,-8,5,14);
+  const lae=[[0,-b.r*.9,b.r,'#2c4420'],[-b.r*.2,-b.r*1.1,b.r*.72,'#3d5c2a'],[-b.r*.34,-b.r*1.3,b.r*.42,'#4f7434']];
+  for(const l of lae){ctx.fillStyle=l[3];
+    ctx.beginPath();ctx.arc(l[0],l[1],l[2],0,TAU);ctx.fill();}
+  ctx.strokeStyle='#1b2a12';ctx.lineWidth=2.4;
+  ctx.beginPath();ctx.arc(0,-b.r*.9,b.r,0,TAU);ctx.stroke();
+  if(b.gemerk){ // ink-X
+    ctx.strokeStyle='#e0b64f';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(-7,-b.r*.9-7);ctx.lineTo(7,-b.r*.9+7);
+    ctx.moveTo(7,-b.r*.9-7);ctx.lineTo(-7,-b.r*.9+7);ctx.stroke();
+  }
+  ctx.restore();
+}
+let laas=performance.now();
+function render(){
+  if(!VW||!VH)return;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#131a10';ctx.fillRect(0,0,VW,VH);
+  ctx.save();
+  ctx.translate(VW/2,VH/2);ctx.scale(KAM.z,KAM.z);ctx.translate(-KAM.x,-KAM.y);
+  // statiese laag — die bak is halwe resolusie en word ALTYD opgeskaal; gladstryk
+  ctx.drawImage(bg,0,0,bg.width,bg.height,0,0,WW,WH);
+  // blokke op die grond
+  for(const bl of BLOKKE){
+    if(!vis(bl.x,bl.y,30))continue;
+    ctx.fillStyle='rgba(10,14,7,.3)';ctx.beginPath();ctx.ellipse(bl.x,bl.y+3,10,3.4,0,0,TAU);ctx.fill();
+    ctx.fillStyle='#8a6f3f';ctx.fillRect(bl.x-9,bl.y-4,18,8);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;ctx.strokeRect(bl.x-9,bl.y-4,18,8);
+  }
+  // die hoop
+  if(vis(HOOP.x,HOOP.y,80)){
+    const n=Math.min(HOOP.n,14);
+    for(let i=0;i<n;i++){
+      const ry=Math.floor(i/5),rx=i%5;
+      ctx.fillStyle=ry%2?'#93764a':'#8a6f3f';
+      ctx.fillRect(HOOP.x-24+rx*10+(ry%2)*5,HOOP.y-4-ry*7,18,7);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;
+      ctx.strokeRect(HOOP.x-24+rx*10+(ry%2)*5,HOOP.y-4-ry*7,18,7);
+    }
+    if(HOOP.n>14){ctx.fillStyle='#ece5cc';ctx.font='15px VT323,monospace';
+      ctx.textAlign='center';ctx.fillText(HOOP.n,HOOP.x,HOOP.y-4-3*7-6);}
+  }
+  // die skerm: spook → bousite-stadiums → klaar gebou
+  {
+    const K=SKERM_KOL;
+    if(!S.skerm&&!BOUSITE){         // pulserende spook
+      const p=.55+.35*Math.sin(performance.now()/300);
+      ctx.strokeStyle='rgba(127,201,94,'+p+')';ctx.lineWidth=3;ctx.setLineDash([7,6]);
+      ctx.strokeRect(K.x-34,K.y-30,68,52);ctx.setLineDash([]);
+      ctx.fillStyle='rgba(127,201,94,'+(p*.5)+')';
+      ctx.font='24px VT323,monospace';ctx.textAlign='center';ctx.fillText('+',K.x,K.y+4);
+    }else{
+      const st=S.skerm?5:BOUSITE.stadium;
+      // afgelewerde blokke by die site, wat verteer word
+      if(BOUSITE){
+        const oor=BOUSITE.gelewer-BOUSITE.verbruik;
+        for(let i=0;i<oor;i++){
+          ctx.fillStyle='#8a6f3f';ctx.fillRect(K.x-30+i*11,K.y+20,18,7);
+          ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;ctx.strokeRect(K.x-30+i*11,K.y+20,18,7);
+        }
+      }
+      ctx.save();ctx.translate(K.x,K.y);
+      ctx.fillStyle='rgba(10,14,7,.3)';ctx.beginPath();ctx.ellipse(4,26,38,8,0,0,TAU);ctx.fill();
+      if(st>=1){ // penne en tou
+        ctx.strokeStyle='#c9b06a';ctx.lineWidth=1.6;ctx.setLineDash([4,4]);
+        ctx.strokeRect(-32,-26,64,48);ctx.setLineDash([]);
+        ctx.fillStyle='#5d4a2c';
+        for(const [px,py] of [[-32,-26],[32,-26],[-32,22],[32,22]])ctx.fillRect(px-2,py-6,4,9);
+      }
+      if(st>=2){ // hoekpale
+        ctx.fillStyle='#6f5636';
+        ctx.fillRect(-30,-24,6,44);ctx.fillRect(24,-24,6,44);
+        ctx.fillRect(-30,-24,6,10);ctx.fillRect(24,-24,6,10);
+        ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+        ctx.strokeRect(-30,-24,6,44);ctx.strokeRect(24,-24,6,44);
+      }
+      if(st>=3){ // raam-balke
+        ctx.strokeStyle='#8a6f3f';ctx.lineWidth=5;
+        ctx.beginPath();ctx.moveTo(-27,-22);ctx.lineTo(27,-22);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(-27,-2);ctx.lineTo(27,-2);ctx.stroke();
+        ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;
+        ctx.beginPath();ctx.moveTo(-27,-22);ctx.lineTo(27,-22);ctx.stroke();
+      }
+      if(st>=4){ // dak-helfte: sink skuins agtertoe
+        ctx.fillStyle='#9aa0a2';
+        ctx.beginPath();ctx.moveTo(-34,-24);ctx.lineTo(34,-24);ctx.lineTo(28,-40);ctx.lineTo(-28,-40);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='rgba(20,26,14,.35)';ctx.lineWidth=1.6;
+        for(let i=-26;i<=26;i+=9){ctx.beginPath();ctx.moveTo(i,-24);ctx.lineTo(i*0.82,-40);ctx.stroke();}
+        ctx.strokeStyle='#14180e';ctx.lineWidth=2.4;
+        ctx.beginPath();ctx.moveTo(-34,-24);ctx.lineTo(34,-24);ctx.lineTo(28,-40);ctx.lineTo(-28,-40);ctx.closePath();ctx.stroke();
+      }
+      if(st>=5){ // klaar: mure + bedrolle — die eerste dak
+        ctx.fillStyle='#8a7658';ctx.fillRect(-30,-22,60,42);
+        ctx.fillStyle='rgba(20,26,14,.25)';ctx.fillRect(-30,-22,60,6);
+        ctx.fillStyle='#2b2015';ctx.fillRect(-8,-4,18,24);          // oop voorkant
+        ctx.fillStyle='#7a5a44';ctx.fillRect(-24,6,12,7);ctx.fillRect(12,6,12,7); // bedrolle
+        ctx.strokeStyle='#14180e';ctx.lineWidth=2.6;ctx.strokeRect(-30,-22,60,42);
+        // dak bo-oor
+        ctx.fillStyle='#9aa0a2';
+        ctx.beginPath();ctx.moveTo(-34,-22);ctx.lineTo(34,-22);ctx.lineTo(28,-40);ctx.lineTo(-28,-40);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='#14180e';ctx.lineWidth=2.4;
+        ctx.beginPath();ctx.moveTo(-34,-22);ctx.lineTo(34,-22);ctx.lineTo(28,-40);ctx.lineTo(-28,-40);ctx.closePath();ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+  // die klok-swaai bo-op die gebakte paal
+  if(klokSwaai>0){
+    const k=GEBOUE[1];
+    ctx.save();ctx.translate(k.x+7,k.y+6);
+    ctx.rotate(Math.sin(klokSwaai*12)*.5*klokSwaai);
+    ctx.fillStyle='#e0b64f';
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-7,16);ctx.lineTo(7,16);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+  }
+  // PA op die stoep — koffie, stoom, en sy lyne
+  {
+    ctx.save();ctx.translate(PA.x,PA.y);
+    ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(0,2,9,3.4,0,0,TAU);ctx.fill();
+    ctx.fillStyle='#2a1f12';ctx.fillRect(-4,-7,3.5,8);ctx.fillRect(1,-7,3.5,8);
+    ctx.fillStyle='#e8e6df';ctx.fillRect(-6,-21,12,14);                 // wit hemp
+    ctx.fillStyle='rgba(20,26,14,.18)';ctx.fillRect(2,-21,4,14);
+    ctx.fillStyle='#e2b18d';ctx.fillRect(-4.5,-29,9,8);
+    ctx.fillStyle='#d8d5cd';ctx.fillRect(-4.5,-31,9,3);                 // grys hare
+    ctx.fillStyle='#ece5cc';ctx.fillRect(6,-18,5,6);                    // die beker
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+    ctx.strokeRect(-6,-21,12,14);ctx.strokeRect(-4.5,-29,9,8);ctx.strokeRect(6,-18,5,6);
+    const stm=(PA.steam%1.6)/1.6;
+    ctx.fillStyle='rgba(236,229,204,'+(0.5*(1-stm))+')';
+    ctx.beginPath();ctx.arc(8.5+Math.sin(PA.steam*3)*2,-22-stm*10,1.6+stm*2,0,TAU);ctx.fill();
+    ctx.restore();
+    if(PA.lynT>0){
+      ctx.font='17px VT323,monospace';ctx.textAlign='center';
+      const w=ctx.measureText(PA.lyn).width+16;
+      ctx.fillStyle='rgba(10,14,7,.85)';ctx.fillRect(PA.x-w/2,PA.y-56,w,22);
+      ctx.strokeStyle='#5c4a2e';ctx.lineWidth=2;ctx.strokeRect(PA.x-w/2,PA.y-56,w,22);
+      ctx.fillStyle='#ece5cc';ctx.fillText(PA.lyn,PA.x,PA.y-40);
+    }
+  }
+  // y-gesorteerde lewende dinge: bome + mense + hoenders
+  const dinge=[];
+  for(const b of BOME)if(b.toestand!=='weg'&&vis(b.x,b.y,60))dinge.push([b.y,0,b]);
+  for(const m of MENSE)if(vis(m.x,m.y,50))dinge.push([m.y,1,m]);
+  for(const h of HOENDERS)if(vis(h.x,h.y,20))dinge.push([h.y,2,h]);
+  for(const d of DWALERS)if(vis(d.x,d.y,40))dinge.push([d.y,3,d]);
+  dinge.sort((a,b)=>a[0]-b[0]);
+  for(const [,t,d] of dinge){
+    if(t===0)tekenBoom(d);
+    else if(t===1)tekenMens(d);
+    else if(t===3){ // dwaler — die zombiespel se taal: groen lyf, rooi oë, ink
+      const wip=Math.sin(d.tred)*1.6;
+      ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(d.x,d.y+2,8,3,0,0,TAU);ctx.fill();
+      ctx.save();ctx.translate(d.x,d.y+wip*.5);
+      ctx.fillStyle='#2b3a22';ctx.fillRect(-4,-6,3.5,7);ctx.fillRect(1,-6,3.5,7);
+      ctx.fillStyle='#4e6b34';ctx.fillRect(-5,-18,10,12);
+      ctx.fillStyle='rgba(226,240,180,.3)';ctx.fillRect(-5,-18,2.5,12);
+      ctx.fillStyle='#93a86c';ctx.fillRect(-4,-26,8,8);
+      ctx.fillStyle='#c04030';ctx.fillRect(-2.5,-23,2,2);ctx.fillRect(1,-23,2,2);
+      ctx.fillStyle='#4e6b34';ctx.fillRect(-9,-15+wip,4,3);ctx.fillRect(5,-15-wip,4,3);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+      ctx.strokeRect(-5,-18,10,12);ctx.strokeRect(-4,-26,8,8);
+      ctx.restore();
+    }
+    else{ // hoender
+      ctx.fillStyle='rgba(10,14,7,.3)';ctx.beginPath();ctx.ellipse(d.x,d.y+1,4,1.6,0,0,TAU);ctx.fill();
+      ctx.fillStyle='#ece5cc';ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.fill();
+      ctx.fillStyle='#c05038';ctx.fillRect(d.x+((d.vx>=0)?2:-3.4),d.y-8.5,1.6,1.8);
+      const pik=Math.sin(d.pik)>0.6?2:0;
+      ctx.fillStyle='#e0b64f';ctx.fillRect(d.x+((d.vx>=0)?3.4:-4.8),d.y-6+pik,1.6,1.2);
+      ctx.strokeStyle='rgba(20,24,14,.6)';ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.stroke();
+    }
+  }
+  // rook
+  for(const r of ROOK){
+    const f=r.t/r.life;
+    ctx.fillStyle='rgba(154,160,127,'+(.4*(1-f))+')';
+    ctx.beginPath();ctx.arc(r.x,r.y,3+f*7,0,TAU);ctx.fill();
+  }
+  // deeltjies
+  for(const p of SPANNE){
+    ctx.globalAlpha=1-p.t/p.life;
+    ctx.fillStyle=p.col;ctx.fillRect(p.x,p.y,p.r,p.r);
+    ctx.globalAlpha=1;
+  }
+  // kraaie bo alles
+  for(const k of KRAAIE){
+    const kx=WERF.x+Math.cos(k.a)*k.r*1.3, ky=WERF.y-160+Math.sin(k.a)*k.r*.5;
+    const klap=Math.sin(k.a*9+k.h*9);
+    ctx.strokeStyle='rgba(20,24,14,.8)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(kx-5,ky-klap*3);ctx.quadraticCurveTo(kx,ky+2,kx+5,ky-klap*3);ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/* ============================== LUS ============================== */
+function raam(now){
+  requestAnimationFrame(raam);
+  const rou=now-laas;laas=now;
+  const dt=Math.min(.05,rou/1000);
+  update(dt);
+  render();
+  if(METE){
+    mTye.push(rou);if(mTye.length>240)mTye.shift();
+    const s2=[...mTye].sort((a,b)=>a-b);
+    document.getElementById('perf').innerHTML=
+      'raam med '+(s2[s2.length>>1]||0).toFixed(1)+'ms<br>p95 '
+      +(s2[Math.floor(s2.length*.95)]||0).toFixed(1)+'ms<br>zoem '
+      +KAM.z.toFixed(2)+' · '+MENSE.length+' mense · '
+      +BOME.filter(b=>b.toestand!=='weg').length+' bome';
+  }
+}
+
+/* ============================== BEGIN ============================== */
+bakTerrein();
+kamBegin();
+{ // ses genoemde werkers, reeds aan die werk
+  const kleure=['#4a5670','#5b6547','#6a4f45','#4f5f66','#5d5470','#66584a'];
+  const hare=['#3b2b20','#5a4630','#2a1f16','#6a4a30','#3b2b20','#7a5a3c'];
+  for(let i=0;i<NAME.length;i++){
+    const m=maakMens(NAME[i],WERF.x+rand(-120,120),WERF.y+rand(-40,140));
+    m.klr=kleure[i];m.hare=hare[i];
+    MENSE.push(m);
+  }
+  // begin-toneel: twee bome reeds gemerk sodat die eerste val binne ~15s kom
+  let n=0;
+  for(const b of BOME){
+    if(n>=2)break;
+    if(dist2(b.x,b.y,WERF.x,WERF.y)<480*480){b.gemerk=true;b.hp=4;n++;}
+  }
+  // en 'n paar los planke as onmiddellike dra-take
+  for(let i=0;i<5;i++)BLOKKE.push({x:1520+rand(-30,220),y:1230+rand(0,60),geëis:0});
+}
+requestAnimationFrame(raam);
+</script>
