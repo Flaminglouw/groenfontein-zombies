@@ -344,6 +344,9 @@ const ZZP={
   coin:[.5,0,1675,0,.06,.24,1,1.82,0,0,837,.06,0,0,0,0,0,1,0],
   hurt:[.6,.1,170,.01,.08,.2,2,1.3,-5,0,0,0,0,.5,0,.3,0,.6,.06],
   zdie:[.4,.3,220,.01,.04,.16,4,1.6,-6,0,0,0,0,1,0,.2,0,.5,.04],
+  // 'n nat plof op vleis — daar was voorheen NUL klank op 'n nie-dodelike hou
+  hitm:[.22,.15,150,.005,.02,.07,4,1.9,-3,0,0,0,0,1.4,0,.15,0,.42,.02],
+  hitc:[.30,.10,420,.004,.03,.09,1,2.2,0,0,0,0,0,.8,0,.2,0,.55,.02],
   lvl:[.6,0,392,.05,.2,.32,1,1.7,0,0,196,.11,0,0,0,0,0,.7,.08],
   boom:[.9,.2,68,.02,.15,.5,4,1.1,-.5,.3,0,0,0,1.7,0,.5,.1,.7,.09],
   boss:[.8,.1,50,.05,.32,.55,2,1.3,1.5,.2,0,0,.12,.7,3,.4,.15,.7,.12],
@@ -1716,6 +1719,10 @@ function rebuildGrid(){
     buckets[i].push(z);
   }
 }
+/* KONTRAK: near() gee KANDIDATE, nie treffers nie — dit vul uit die 100px-SELREGHOEK sonder
+   afstandstoets, so hoek-kandidate lê tot ~r+140px ver. ELKE AOE-roeper moet self
+   dist2(...)<(r+q.r)^2 filtreer (die windpomp het dit een keer vergeet: hoek-stuns op ~636px).
+   out is gedeelde skrap (NB) — moet nooit near() roep terwyl jy oor NB itereer nie. */
 function near(x,y,r,out){
   out.length=0;
   let c0=((x-r)/CELL)|0,c1=((x+r)/CELL)|0,d0=((y-r)/CELL)|0,d1=((y+r)/CELL)|0;
@@ -1787,7 +1794,14 @@ function rollType(){
 }
 function killZombie(z){
   G.kills++;
-  boomParts(z.x,z.y,z.type==='boss'?32:12,'#8aa55a');
+  G.kpsN=(G.kpsN||0)+1;            // rollende kill-tempo — govern die skud en die klank
+  killSkud(z);
+  { // BLOED: rooi, in die rigting van die hou, en dit skaal met die lyf
+    const groot=z.type==='boss'||z.type==='bul';
+    const n=Math.min(26,(groot?18:9)+Math.round(z.r*.35));
+    bloed(z.x,z.y,z.lastHitA,n,groot?1.5:1);
+    bloed(z.x,z.y,null,groot?10:4,.55);   // 'n bietjie wat ALLE kante toe spat
+  }
   G.splats.push({x:z.x,y:z.y,r:z.r*(z.type==='boss'?2:1.1)+rand(0,6),rot:R()*TAU});
   if(G.splats.length>140)G.splats.shift();
   SND.zdie();
@@ -1836,8 +1850,15 @@ function killZombie(z){
 function hurtZombie(z,dmg,kx,ky,crit){
   if(z.hp<=0||z.ally>0)return;
   if(z.variant==='alicia'&&G.char.id==='danie')dmg=z.hp+9999; // Danie maak dit finaal klaar
-  z.hp-=dmg;z.flash=.09;
-  if(G.dnums.length<90)G.dnums.push({x:z.x+rand(-6,6),y:z.y-z.r-4,v:''+Math.round(dmg),t:crit?.9:.7,crit});
+  z.hp-=dmg;
+  // die flits skaal op PROPORSIONELE skade, dus werk dit deur die hele hpMul-kurwe
+  z.flash=Math.max(z.flash||0,Math.min(.20,.055+(dmg/Math.max(1,z.maxhp))*.5));
+  if(kx||ky)z.lastHitA=Math.atan2(ky||0,kx||0); // killZombie spuit hierlangs
+  if(z.hp>0){ // nie-dodelike hou: 'n kort sarsie, en 'n klank — daar was NUL klank op 'n hou
+    bloed(z.x,z.y,z.lastHitA,crit?5:2,crit?1.15:.8);
+    slagKlank(z,crit);
+  }
+  if(G.dnums.length<200)G.dnums.push({x:z.x+rand(-6,6),y:z.y-z.r-4,v:''+Math.round(dmg),t:crit?.9:.7,crit});
   if(kx&&z.type!=='boss'&&z.type!=='bul'){z.x+=kx;z.y+=ky;}
   if(z.hp<=0){z.dead=true;killZombie(z);}
 }
@@ -3163,6 +3184,9 @@ function update(dt){
   }
   // partikels & nommers
   for(const p of G.parts){p.t+=dt;if(p.tp!=='ring'){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=.92;p.vy*=.92;}if(p.t>=p.life)p.dead=true;}
+  goreStap(dt);
+  G.kpsT=(G.kpsT||0)+dt;            // 1s-venster: hoe vinnig maai jy nou?
+  if(G.kpsT>=1){G.kps=G.kpsN;G.kpsN=0;G.kpsT=0;}
   for(const d of G.dnums){d.t-=dt;d.y-=28*dt;if(d.t<=0)d.dead=true;}
   for(const s of G.slashes){s.t-=dt;if(s.t<=0)s.dead=true;}
   if(G.banner){G.banner.t-=dt;if(G.banner.t<=0){G.banner=null;
@@ -3182,6 +3206,69 @@ function update(dt){
   compact(G.bales,balLeef);
   // vlak-op skerm (oorgeslaande keuses word nou uitbetaal)
   if(G.pend>0){G.pend+=G.bank||0;G.bank=0;openLevelUp();return;}
+}
+/* ============================== BLOED ==============================
+   Die ou doodslag was `boomParts(x,y,12,'#8aa55a')` — TWAALF GROEN kolletjies,
+   en `boomParts` begin met 'n `>280 return`, so presies tydens 'n bloedbad het
+   die gore homself afgeskakel. Hierdie poel word een keer geallokeer, skryf oor
+   die oudste inskrywing as hy vol is, en skakel NOOIT af nie. Die spuit volg
+   die slaanrigting — `kx/ky` is reeds by `hurtZombie` beskikbaar.            */
+const GORE_N=700, GORE=new Array(GORE_N);
+for(let i=0;i<GORE_N;i++)GORE[i]={on:0,x:0,y:0,vx:0,vy:0,r:2,t:0,life:1,col:'#b0201a'};
+let goreHead=0;
+const BLOEDKLEUR=['#8e1410','#b0201a','#6a0f0c','#d4443a'];
+function bloed(x,y,ang,n,krag){
+  krag=krag||1;
+  for(let i=0;i<n;i++){
+    const g=GORE[goreHead];goreHead=(goreHead+1)%GORE_N;
+    const a=(ang==null?R()*TAU:ang+rand(-.6,.6));
+    const sp=rand(55,205)*krag;
+    g.on=1;g.x=x+rand(-2,2);g.y=y+rand(-2,2);
+    g.vx=Math.cos(a)*sp;g.vy=Math.sin(a)*sp;
+    g.r=rand(1.5,3.7)*(krag>1.3?1.25:1);
+    g.t=0;g.life=rand(.30,.66);
+    g.col=BLOEDKLEUR[(R()*4)|0];
+  }
+}
+function goreStap(dt){
+  const drag=Math.pow(.10,dt); // raam-onafhanklik: .92-per-raam skiet halfver op 120Hz
+  for(let i=0;i<GORE_N;i++){
+    const g=GORE[i];if(!g.on)continue;
+    g.t+=dt;
+    if(g.t>=g.life){g.on=0;continue;}
+    g.x+=g.vx*dt;g.y+=g.vy*dt;g.vx*=drag;g.vy*=drag;
+  }
+}
+function goreTeken(c,camX,camY){
+  for(let i=0;i<GORE_N;i++){
+    const g=GORE[i];if(!g.on)continue;
+    if(g.x<camX-8||g.x>camX+VW+8||g.y<camY-8||g.y>camY+VH+8)continue;
+    const k=1-g.t/g.life;
+    c.globalAlpha=k<.35?k/.35:1;
+    c.fillStyle=g.col;
+    c.beginPath();c.arc(g.x,g.y,g.r*(.45+k*.55),0,TAU);c.fill();
+  }
+  c.globalAlpha=1;
+}
+/* Slagklank + slagting-meter. Die klank word gesmoor (40ms) EN deur die
+   kill-tempo gegovern — sonder dit is 40 kills/s 'n muur van ruis.           */
+let hitSndT=0;
+function slagKlank(z,crit){
+  const now=performance.now();
+  if(now-hitSndT<42)return;
+  hitSndT=now;
+  // toonhoogte per lyfgrootte: 'n lam tjirp hoog, 'n bul brom laag
+  // toonhoogte per lyfgrootte: 'n lam tjirp hoog, 'n bul brom laag.
+  // Kloon die resep en skaal die frekwensie-velde, presies soos SND.gem doen.
+  const fm=Math.max(.55,Math.min(1.8,14/Math.max(6,z.r)));
+  const pr=(crit?ZZP.hitc:ZZP.hitm).slice();
+  pr[2]*=fm; if(pr[10])pr[10]*=fm;
+  zz(pr);
+}
+/* Skudding op 'n KILL — daar was 13 skud-bronne en NIE EEN was 'n doodslag nie. */
+function killSkud(z){
+  const k=Math.min(.30,z.r*z.r/2400);          // lam ~.03, plaas ~.07, bul ~.24
+  G.shake=Math.max(G.shake,k*22*(1-Math.min(.75,(G.kps||0)/16)));
 }
 function boomParts(x,y,n,col){
   if(G.parts.length>280)return;
@@ -4278,6 +4365,7 @@ function render(){
     }
   }
   // partikels
+  goreTeken(ctx,camX,camY);   // bloed onder die lywe, bo die grond
   for(const p of G.parts){
     if(p.tp==='ring'){
       const k=p.t/p.life;
