@@ -988,6 +988,124 @@ cv.addEventListener('wheel',e=>{
   KAM.z=clamp(KAM.z*(e.deltaY<0?1.12:0.89),KAM.minZ,KAM.maxZ);
   KAM.x=wx-(e.clientX-VW/2)/KAM.z;KAM.y=wy-(e.clientY-VH/2)/KAM.z;kamKlem();
 },{passive:false});
+/* ============================== RAND-ROL (RTS-STYL) ==============================
+   HOEKOM DIT BESTAAN: op 'n rekenaar is sleep-pan die verkeerde gebaar — jy moet 'n
+   knoppie ingedruk hou terwyl jy eintlik net wil KYK, en elke sleep steel 'n moontlike
+   tik. Stoot die wyser teen die glas en die kamera ry self.
+
+   HOEKOM DAAR NIE AGT GEVALLE IS NIE: die x-krag en die y-krag word onafhanklik bereken
+   en dan SAAM genormaliseer. 0, 45, 90 grade ens. kom gratis uit, en 'n skuinste is nie
+   41% vinniger as 'n reguite nie (die klassieke fout).
+
+   HOEKOM DIT VERSTEK AF IS: die spel is foon-eerste. 'n Vinger het geen sweef-toestand
+   nie — sy laaste raakpunt bly le waar hy die skerm gelos het, meestal op 'n knoppie in
+   die balk heel onder. Sou ons daarop rol, dryf die kamera weg elke keer as die speler
+   bou. Dus: niks rol voor 'n WARE muis beweeg het nie, en enige raak sit dit weer af. */
+const ROL_BAND_F=.045, ROL_BAND_MIN=28, ROL_BAND_MAX=64;
+const ROL_SPOED=820;      // SKERM-px/s by volle krag (= wereld-eenhede/s by z=1)
+const ROL_VLOER=.22;      // laagste krag binne die band; sonder hom voel die buiterand dood
+const ROL_TAU=.08;        // s — aan/af-sagtheid
+const ROL_ZMIN=.5;
+const ROL={aan:false,binne:false,oorUI:false,x:0,y:0,vx:0,vy:0,sl:{l:0,r:0,o:0,a:0}};
+
+/* Die harde hek vir raak-toestelle. 'n S25 antwoord 'nee' en dan is die meganisme dood.
+   Dit is 'n LEWENDE navraag — steek jy 'n muis in 'n DeX-dok, skakel dit vanself aan. */
+const MUIS_MQ=window.matchMedia?window.matchMedia('(hover:hover) and (pointer:fine)'):{matches:false};
+function rolBand(){return clamp(Math.round(Math.min(VW,VH)*ROL_BAND_F),ROL_BAND_MIN,ROL_BAND_MAX);}
+function rolKrag(d,band){
+  if(d>=band)return 0;
+  const t=clamp(1-d/band,0,1);
+  return ROL_VLOER+(1-ROL_VLOER)*(t*t*(3-2*t));   // smoothstep = versnelling naby die glas
+}
+/* AL DIE BOTSINGS SIT IN HIERDIE EEN FUNKSIE, en die volgorde is die ontwerp: wie ook al
+   'n sterker aanspraak op die wyser het, wen. Rand-rol is heel laaste in die ry. */
+function rolMagRand(){
+  if(!ROL.aan)return false;                 // nog nooit 'n muis gesien (of 'n vinger het geraak)
+  if(!MUIS_MQ.matches)return false;         // raakskerm — sweef bestaan nie hier nie
+  if(!ROL.binne)return false;               // wyser is uit die venster; geen koordinate meer
+  if(ROL.oorUI)return false;                // hy mik na 'n knoppie, nie na die wereld nie
+  if(sleep||vingers.size>0)return false;    // sleep-pan/knyp is aan die woord
+  return true;
+}
+/* HOEKOM e.target EN NIE 'n REGHOEK NIE: die bou-balk sit PRESIES waar die onderste band
+   is, en 'n hardgekodeerde reghoek daarvoor sou verouder sodra iemand 'n knoppie byvoeg.
+   Die CSS se reeds die waarheid — #hud/#balk is pointer-events:none (die gebeurtenis val
+   deur na #cv) terwyl .kn/#winkel/#rye/#gebkaart/#terug hom vang. Netto: die onderste band
+   bly OOP links en regs van die balk en is TOE onder die knoppies — vanself, en vir altyd. */
+function rolWyser(e){
+  ROL.aan=(e.pointerType==='mouse');        // 'pen' en 'touch' ontwapen dit
+  ROL.x=e.clientX; ROL.y=e.clientY; ROL.binne=true;
+  ROL.oorUI=(e.target!==cv);
+}
+addEventListener('pointermove',rolWyser,{passive:true});
+addEventListener('pointerdown',rolWyser,{passive:true});
+function rolStop(){
+  ROL.binne=false; ROL.sl.l=ROL.sl.r=ROL.sl.o=ROL.sl.a=0; ROL.vx=ROL.vy=0;
+}
+/* Verlaat die wyser die bladsy, hou ons op. Ons hou hom NIE aan die rol nie: sonder
+   koordinate kan ons nooit weer sien dat hy opgehou het nie, en 'n kamera wat op sy eie
+   teen die wereldmuur gaan le is erger as 'n rol wat te vroeg stop. */
+addEventListener('pointerout',e=>{if(!e.relatedTarget)ROL.binne=false;},{passive:true});
+document.addEventListener('pointerleave',()=>{ROL.binne=false;},{passive:true});
+/* Alt-tab met 'n sleutel ingedruk lewer nooit 'n keyup nie — sonder hierdie twee reels
+   dryf die kamera vir ewig weg terwyl jy in 'n ander venster werk. */
+addEventListener('blur',rolStop);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)rolStop();});
+
+/* e.code en nie e.key nie: code is die FISIESE sleutelposisie, dus kry 'n AZERTY-bord
+   ZQSD op presies die regte plekke sonder 'n enkele ekstra reel. */
+const ROL_SLEUTELS={ArrowLeft:'l',KeyA:'l',ArrowRight:'r',KeyD:'r',
+                    ArrowUp:'o',KeyW:'o',ArrowDown:'a',KeyS:'a'};
+addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const k=ROL_SLEUTELS[e.code]; if(!k)return;
+  const a=document.activeElement;
+  if(a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.isContentEditable))return;
+  ROL.sl[k]=1;
+  /* Sonder hierdie preventDefault rol #winkel (overflow-x:auto) saam sodra 'n
+     bou-knoppie fokus het — die balk skuif dan onder jou hande uit. */
+  e.preventDefault();
+},{passive:false});
+addEventListener('keyup',e=>{const k=ROL_SLEUTELS[e.code];if(k)ROL.sl[k]=0;});
+
+let rolVorm='';
+function rolWyserVorm(dx,dy){
+  let v='';
+  if(MUIS_MQ.matches&&(dx||dy)){
+    const w=Math.abs(dy)>.15?(dy<0?'n':'s'):'';
+    const h=Math.abs(dx)>.15?(dx<0?'w':'e'):'';
+    v=(w+h)+'-resize';
+  }
+  if(v!==rolVorm){rolVorm=v;cv.style.cursor=v;}
+}
+function randRol(dt){
+  let dx=0,dy=0;
+  /* Sleutelbord eerste, want hy hang van GEEN wyser-hek af nie — 'n bluetooth-bordjie
+     op 'n foon moet net werk. */
+  dx+=(ROL.sl.r?1:0)-(ROL.sl.l?1:0);
+  dy+=(ROL.sl.a?1:0)-(ROL.sl.o?1:0);
+  if(rolMagRand()){
+    const b=rolBand();
+    dx-=rolKrag(ROL.x,b);      dx+=rolKrag(VW-ROL.x,b);
+    dy-=rolKrag(ROL.y,b);      dy+=rolKrag(VH-ROL.y,b);
+  }
+  /* Hier word agt rigtings EEN rigting: klem die LENGTE, nie die komponente nie, anders
+     is 'n hoek 41% vinniger as 'n kant en voel die skuinstes verkeerd. */
+  const len=Math.hypot(dx,dy);
+  if(len>1){dx/=len;dy/=len;}
+  const k=1-Math.exp(-dt/ROL_TAU);          // raamtempo-onafhanklike nadering
+  ROL.vx+=(dx-ROL.vx)*k; ROL.vy+=(dy-ROL.vy)*k;
+  if(Math.abs(ROL.vx)<1e-4)ROL.vx=0;
+  if(Math.abs(ROL.vy)<1e-4)ROL.vy=0;
+  if(!ROL.vx&&!ROL.vy){rolWyserVorm(0,0);return;}
+  /* Deel deur z sodat die SKERM-spoed konstant bly: by uitgezoem dek jy meer wereld per
+     sekonde (anders voel dit stroperig), by ingezoem minder (anders hol dit weg). */
+  const spoed=ROL_SPOED/Math.max(KAM.z,ROL_ZMIN);
+  KAM.x+=ROL.vx*spoed*dt; KAM.y+=ROL.vy*spoed*dt;
+  kamKlem();
+  rolWyserVorm(dx,dy);
+}
+
 /* ============================== GEBOU-SELEKSIE ==============================
    VIER dinge wil reeds 'n tik hê: kamera-sleep, plasing (PLAAS/SPOOK), boom-merk,
    en die klok. Seleksie is die vyfde, dus is die VOLGORDE hier die hele ontwerp:
@@ -1065,6 +1183,7 @@ function tik(wx,wy){
 let T=0, swerwerT=0, dwalerT=70, kosKlok=0, swerwerModus=0, hongerTel=0, hongerVorige=0;
 let METE=false,mTye=[];
 function update(dt){
+  randRol(dt);                 // kamera eerste — alles hierna sien reeds die nuwe uitsig
   T+=dt;S.tyd+=dt;
   const nuweDag=1+Math.floor(S.tyd/VOLLEDAG);
   if(nuweDag!==S.dag){S.dag=nuweDag;dagDryf();persistSoon();}
