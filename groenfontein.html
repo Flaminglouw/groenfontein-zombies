@@ -34,6 +34,17 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
 #dagwys{margin-left:auto;background:rgba(10,14,7,.82);border:2px solid var(--lyn);
   padding:3px 9px;font-size:19px;color:var(--dof)}
 
+/* --- gebou-kaart: tik 'n gebou en sien wat hy doen en wat 'n opgradering kos --- */
+#gebkaart{position:fixed;left:8px;bottom:96px;z-index:7;display:none;
+  background:rgba(10,14,7,.94);border:2px solid var(--lyn);padding:9px 11px;
+  min-width:216px;max-width:min(78vw,320px);pointer-events:auto}
+#gebkaart h4{margin:0 0 6px;color:var(--goud);font-size:19px;letter-spacing:1px;font-weight:400}
+#gebkaart .r{display:flex;justify-content:space-between;gap:14px;font-size:17px;color:var(--dof)}
+#gebkaart .r .op{color:#8fd06a}
+#gebkaart .r .af{color:#d08a6a}
+#gebkaart .kn{font-size:18px}
+#gebkaart .kn[disabled]{opacity:.5}
+
 /* --- kaart wat wys hoekom die geluk is wat dit is --- */
 #glkaart{position:fixed;top:44px;left:8px;z-index:7;background:var(--paneel);
   border:3px solid var(--lyn);box-shadow:0 0 0 3px #0a0e07;padding:12px 14px;
@@ -83,6 +94,8 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <a id="terug" href="index.html" title="Terug na Drie Broers">&larr;</a>
 </div>
 <div id="glkaart"><h4>DIE MENSE SE HUMEUR</h4><div id="glrye"></div></div>
+<div id="gebkaart"><h4 id="gkNaam">GEBOU</h4><div id="gkRye"></div>
+  <button class="kn" id="gkOpg" style="margin-top:8px;width:100%"></button></div>
 <div id="prompt"></div>
 <div id="balk">
   <div id="rye"></div>
@@ -125,7 +138,10 @@ try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object'&&
 let persistT=0;
 function persist(){
   try{
-    S.geb=GEB.map(g=>[g.tipe,Math.round(g.x),Math.round(g.y),g.klaar?1:0,g.stadium,g.gelewer,g.verbruik]);
+    /* vlak en opgradeer word AGTERAAN aangelas: 'n ou stoor gee undefined en val
+       skoon terug na vlak 1, sonder 'n migrasie-stap. */
+    S.geb=GEB.map(g=>[g.tipe,Math.round(g.x),Math.round(g.y),g.klaar?1:0,g.stadium,g.gelewer,g.verbruik,
+                      g.vlak||1,g.opgradeer||0,g.gelewerH||0,g.gelewerK||0]);
     S.mense=MENSE.length;
     localStorage.setItem(GF_KEY,JSON.stringify(S));
   }catch(e){}
@@ -175,6 +191,67 @@ function nuweGebou(tipe,x,y){
   return {tipe,x,y,klaar:false,stadium:0,gelewer:0,verbruik:0,opPad:0,
           werk:0,werkers:[],prodT:0,brand:0};
 }
+/* ============================== VLAKKE ==============================
+   Vordering IS die opgradeer van individuele geboue (Louw se visie: geen ouderdomme).
+   ELKE opgradering moet 'n BESLUIT wees, nie 'n gratis "beter"-knoppie nie:
+     - 'n groter huis gee beddens, maar elke bed is 'n MOND wat 4 kos/dag eet;
+     - 'n groter werkplek gee 'n plek, maar dié werker kom uit jou bestaande mense
+       en werk dus nie elders nie.
+   Die opgradering self loop deur die DRA-KETTING (dieselfde vat/bou-take as bou) —
+   dit is die ziel van hierdie spel; 'n knoppie wat sommer goud aftrek, is dit nie.
+   Terwyl 'n gebou opgradeer, WERK HY NIE. Dit is die werklike prys. */
+const VLAKKE={
+  huis:     [{bed:4},                       {bed:7, koste:{hout:6,klip:3}},  {bed:11,koste:{hout:9,klip:6}}],
+  skerm:    [{bed:2},                       {bed:3, koste:{hout:3}},         {bed:4, koste:{hout:5}}],
+  tuin:     [{plekke:2},                    {plekke:3,koste:{hout:4}},       {plekke:4,koste:{hout:6,klip:2}}],
+  houthut:  [{plekke:2},                    {plekke:3,koste:{hout:4}},       {plekke:4,koste:{hout:6,klip:2}}],
+  klipgroef:[{plekke:2},                    {plekke:3,koste:{hout:5}},       {plekke:4,koste:{hout:7,klip:2}}],
+  braai:    [{gl:4},                        {gl:6,  koste:{hout:3,klip:2}},  {gl:8, koste:{hout:5,klip:4}}],
+  wagtoring:[{gl:2},                        {gl:3,  koste:{hout:4,klip:3}},  {gl:4, koste:{hout:6,klip:5}}],
+};
+function gVlak(g){return g.vlak||1;}
+function beginOpgradeer(g){
+  if(!kanOpgradeer(g))return false;
+  const k=opgKoste(g);
+  /* Ons EIS die materiaal in voorraad voor ons begin. Sonder hierdie hek kan die
+     speler 'n opgradering begin sonder hout, en dan staan die gebou stukkend en
+     nutteloos totdat daar hout is — 'n lokval, nie 'n besluit nie. */
+  if(voorraad('hout')<(k.hout||0)||voorraad('klip')<(k.klip||0)){
+    plToast('Nie genoeg materiaal vir die opgradering nie.');klank(150,.18,.1);return false;
+  }
+  g.opgradeer=gVlak(g)+1;
+  g.klaar=false; g.stadium=ST_N-1;          // net die laaste stadium — 'n aanbou, nie 'n herbou
+  g.gelewer=0; g.gelewerH=0; g.gelewerK=0;
+  g.opPad=0; g.opPadH=0; g.opPadK=0;
+  g.verbruik=0; g.werk=0; g.bouer=null;
+  for(const w of g.werkers)if(w)w.werkplek=null;   // die werkers is nou vry — die gebou werk nie
+  g.werkers=[];
+  plToast(GT[g.tipe].naam+' word opgegradeer na vlak '+g.opgradeer+'.');
+  klank(430,.12,.11); bemanGeboue(); persistSoon();
+  return true;
+}
+function maxVlak(t){return (VLAKKE[t]||[1]).length;}
+/* vDat KLEM vir die huidige vlak (veilig as 'n tabel later krimp), maar opgKoste
+   mag NIE klem nie: 'n geklemde lesing gee die maksimum vlak se koste terug asof
+   daar nog 'n opgradering is. Dit is die soort stil leuen wat later 'n knoppie
+   laat verskyn wat niks doen nie. */
+function vDat(t,v){const r=VLAKKE[t];return r?r[Math.min(v,r.length)-1]:null;}
+function vDatPresies(t,v){const r=VLAKKE[t];return (r&&v>=1&&v<=r.length)?r[v-1]:null;}
+function gBed(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.bed!==undefined)?d.bed:(GT[g.tipe].bed||0);}
+function gPlekke(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.plekke!==undefined)?d.plekke:(GT[g.tipe].plekke||2);}
+function gGl(g){const d=vDat(g.tipe,gVlak(g));return d&&d.gl!==undefined?d.gl:0;}
+function opgKoste(g){const d=vDatPresies(g.tipe,gVlak(g)+1);return (d&&d.koste)?d.koste:null;}
+function kanOpgradeer(g){return g.klaar&&!g.opgradeer&&gVlak(g)<maxVlak(g.tipe)&&!!opgKoste(g);}
+
+/* Koste-funksies wat WEET of die site 'n nuwe gebou of 'n opgradering is. Sonder
+   hierdie onderskeid sou 'n opgradering die BASIS-koste vra en dus die verkeerde
+   hoeveelheid vragte verwag. */
+function sKosteObj(g){return g.opgradeer?(vDat(g.tipe,g.opgradeer).koste||{}):GT[g.tipe].koste;}
+function sKoste(g){const k=sKosteObj(g);return (k.hout||0)+(k.klip||0);}
+function sDrempel(g,st){
+  if(g.opgradeer)return sKoste(g);            // een enkele stadium vir 'n opgradering
+  return stDrempel(g.tipe,st);
+}
 function gebRegs(g){const G2=GT[g.tipe];return {x:g.x-G2.w/2,y:g.y-G2.h/2,w:G2.w,h:G2.h};}
 function botsGebou(x,y,w,h,skip){
   for(const g of GEB){
@@ -185,7 +262,7 @@ function botsGebou(x,y,w,h,skip){
   return false;
 }
 function tel(tipe){let n=0;for(const g of GEB)if(g.tipe===tipe&&g.klaar)n++;return n;}
-function beddens(){let n=0;for(const g of GEB)if(g.klaar&&GT[g.tipe].bed)n+=GT[g.tipe].bed;return n;}
+function beddens(){let n=0;for(const g of GEB)if(g.klaar&&GT[g.tipe].bed)n+=gBed(g);return n;}
 function hetSpens(){return tel('spens')>0;}
 function braaiPlek(){for(const g of GEB)if(g.klaar&&GT[g.tipe].braai)return g;return null;}
 
@@ -361,7 +438,7 @@ function bykom(s,n){S[s]=(S[s]||0)+n;persistSoon();}
 function oopSite(){
   for(const g of GEB){
     if(g.klaar)continue;
-    const nodig=stKoste(g.tipe)-g.gelewer-g.opPad;
+    const nodig=sKoste(g)-g.gelewer-g.opPad;
     if(nodig>0)return g;
   }
   return null;
@@ -375,7 +452,7 @@ function siteKanBou(){
   return null;
 }
 function watKosSite(g){          // watter hulpbron kort die site nou?
-  const k=GT[g.tipe].koste;
+  const k=sKosteObj(g);
   const gelewerH=g.gelewerH||0, gelewerK=g.gelewerK||0;
   if((k.hout||0)>gelewerH+(g.opPadH||0))return 'hout';
   if((k.klip||0)>gelewerK+(g.opPadK||0))return 'klip';
@@ -607,7 +684,7 @@ function mensTik(m,dt){
     const G2=GT[site.tipe];
     if(dist2(m.x,m.y,site.x,site.y)<(G2.w/2+30)*(G2.w/2+30)
        ||stapNa(m,site.x+G2.w/2+12,site.y+10,dt)){
-      const nodig=stDrempel(site.tipe,site.stadium);
+      const nodig=sDrempel(site,site.stadium);
       if(site.gelewer<nodig){m.slaan=0;m.tred+=dt*.8;break;}   // wag sigbaar
       m.slaan+=dt;
       if(m.slaan>=.8){m.slaan=0;spanne(site.x+rand(-16,16),site.y-12,2,'#c9b06a');
@@ -619,7 +696,11 @@ function mensTik(m,dt){
         if(site.stadium>=ST_N){
           site.klaar=true;site.bouer=null;m.taak=null;
           klank(660,.2,.14);
-          paSê(GT[site.tipe].naam+' staan.');
+          if(site.opgradeer){                     // 'n aanbou is klaar
+            site.vlak=site.opgradeer; site.opgradeer=0;
+            paSê(GT[site.tipe].naam+' is nou vlak '+site.vlak+'.');
+            spanne(site.x,site.y-18,10,'#e8c96a');klank(780,.18,.13);
+          }else paSê(GT[site.tipe].naam+' staan.');
           bemanGeboue();persistSoon();
         }
       }
@@ -632,7 +713,7 @@ function bemanGeboue(){
   for(const g of GEB){
     if(!g.klaar||!GT[g.tipe].werk)continue;
     g.werkers=g.werkers.filter(w=>MENSE.includes(w)&&w.werkplek===g);
-    const plekke=GT[g.tipe].plekke||2;
+    const plekke=gPlekke(g);
     while(g.werkers.length<plekke){
       let beste=null,bd=1e12;
       for(const m of MENSE){
@@ -685,12 +766,20 @@ function gelukFaktore(){
     rye.push([buite+' slaap buite',d]);
   }else if(bed>0)rye.push(['Almal onder ’n dak',+2]);
   // DIE BRAAI — ons plaas se kroeg
-  if(braaiPlek())rye.push([BRAAI_AAN?'Die braai brand':'’n Braaiplek staan',BRAAI_AAN?+4:+1]);
-  else rye.push(['Geen braaiplek',-2]);
+  const br=braaiPlek();
+  if(br){
+    const vol=gGl(br);                        // vlak 1/2/3 -> 4/6/8
+    rye.push([BRAAI_AAN?'Die braai brand'+(gVlak(br)>1?' (vlak '+gVlak(br)+')':'')
+                       :'’n Braaiplek staan', BRAAI_AAN?vol:Math.round(vol/4)]);
+  }else rye.push(['Geen braaiplek',-2]);
   // VEILIGHEID
   const naby=DWALERS.filter(d=>!d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)<460*460).length;
   if(naby)rye.push([naby+' dwaler naby',-3*naby]);
-  if(tel('wagtoring'))rye.push(['Wagtoring hou wag',+2]);
+  {                                            // die sterkste toring tel, nie die som nie
+    let beste=null;
+    for(const g of GEB)if(g.klaar&&GT[g.tipe].lig&&(!beste||gVlak(g)>gVlak(beste)))beste=g;
+    if(beste)rye.push(['Wagtoring hou wag'+(gVlak(beste)>1?' (vlak '+gVlak(beste)+')':''),gGl(beste)]);
+  }
   GLRYE=rye;
   return rye.reduce((a,b)=>a+b[1],0);
 }
@@ -899,10 +988,68 @@ cv.addEventListener('wheel',e=>{
   KAM.z=clamp(KAM.z*(e.deltaY<0?1.12:0.89),KAM.minZ,KAM.maxZ);
   KAM.x=wx-(e.clientX-VW/2)/KAM.z;KAM.y=wy-(e.clientY-VH/2)/KAM.z;kamKlem();
 },{passive:false});
+/* ============================== GEBOU-SELEKSIE ==============================
+   VIER dinge wil reeds 'n tik hê: kamera-sleep, plasing (PLAAS/SPOOK), boom-merk,
+   en die klok. Seleksie is die vyfde, dus is die VOLGORDE hier die hele ontwerp:
+   plasing en merk is UITDRUKLIKE modusse en wen altyd; die klok is 'n vaste plek;
+   eers daarna vra ons of die speler 'n gebou bedoel het. So kan die nuwe paneel
+   nooit 'n bestaande gebaar steel nie. */
+let GEKIES=null;
+function gebOnder(wx,wy){
+  let beste=null,bd=1e12;
+  for(const g of GEB){
+    const G2=GT[g.tipe];
+    /* Die raak-teiken is BREER as die gebou self (+18px): op 'n foon by uitgezoomde
+       kamera is 'n skerm 20px wyd en 'n vinger is dit nie. */
+    const hw=G2.w/2+18, hh=G2.h/2+18;
+    if(Math.abs(wx-g.x)<=hw&&Math.abs(wy-g.y)<=hh){
+      const d=dist2(wx,wy,g.x,g.y);
+      if(d<bd){bd=d;beste=g;}
+    }
+  }
+  return beste;
+}
+function kiesGebou(g){
+  GEKIES=g;
+  const kaart=document.getElementById('gebkaart');
+  if(!g){kaart.style.display='none';return;}
+  const G2=GT[g.tipe], v=gVlak(g), maks=maxVlak(g.tipe);
+  document.getElementById('gkNaam').textContent=(G2.ikoon||'')+' '+G2.naam.toUpperCase()+
+    (maks>1?'  ·  VLAK '+v+'/'+maks:'');
+  const rye=[];
+  if(G2.bed)rye.push(['Beddens',gBed(g)]);
+  if(G2.werk)rye.push(['Werkplekke',g.werkers.length+'/'+gPlekke(g)]);
+  if(G2.braai||G2.lig)rye.push(['Humeur',(gGl(g)>0?'+':'')+gGl(g)+' per dag']);
+  if(!g.klaar)rye.push([g.opgradeer?'Word opgegradeer':'Word gebou',
+                        g.gelewer+'/'+sKoste(g)+' vragte']);
+  document.getElementById('gkRye').innerHTML=
+    rye.map(r=>'<div class="r"><span>'+r[0]+'</span><span>'+r[1]+'</span></div>').join('')||
+    '<div class="r"><span>'+(G2.help||'')+'</span></div>';
+  const kn=document.getElementById('gkOpg');
+  if(g.opgradeer){kn.textContent='Opgradering aan die gang…';kn.disabled=true;}
+  else if(v>=maks){kn.textContent=maks>1?'Ten volle opgegradeer':'Kan nie opgradeer nie';kn.disabled=true;}
+  else{
+    const k=opgKoste(g);
+    const genoeg=voorraad('hout')>=(k.hout||0)&&voorraad('klip')>=(k.klip||0);
+    kn.innerHTML='⬆ Opgradeer na vlak '+(v+1)+
+      '<small>'+(k.hout?k.hout+'🪵 ':'')+(k.klip?k.klip+'🪨':'')+'</small>';
+    kn.disabled=!genoeg;
+  }
+  kaart.style.display='block';
+}
+document.getElementById('gkOpg').onclick=()=>{
+  if(GEKIES&&beginOpgradeer(GEKIES))kiesGebou(GEKIES);
+};
+
 function tik(wx,wy){
   document.getElementById('glkaart').style.display='none';
   if(PLAAS){SPOOK.x=wx;SPOOK.y=wy;return;}          // plasing: tik verskuif die spook
   if(dist2(wx,wy,KLOKPAAL.x+7,KLOKPAAL.y+14)<52*52){luiKlok();bouBalk();return;}
+  if(MODUS!=='merk'){
+    const g=gebOnder(wx,wy);
+    kiesGebou(g);                                    // null sluit die paneel
+    if(g){klank(400,.05,.07);return;}
+  }
   if(MODUS==='merk'){
     let beste=null,bd=46*46;
     for(const b of BOME){
@@ -1143,10 +1290,19 @@ function tekenGebou(g){
   const G2=GT[g.tipe],r=gebRegs(g);
   const f=g.klaar?1:(g.stadium/ST_N);
   const x=r.x,y=r.y,w=r.w,h=r.h;
+  /* Die seleksie-ring word EERSTE geverf sodat hy agter die gebou lê — 'n ring
+     bo-oor sou die dak toesmeer. */
+  if(GEKIES===g){
+    ctx.strokeStyle='#e8c96a';ctx.lineWidth=2.4;ctx.setLineDash([7,5]);
+    ctx.strokeRect(x-7,y-7,w+14,h+14);ctx.setLineDash([]);
+  }
   // werpskadu
   ctx.fillStyle='rgba(16,22,11,.28)';
   ctx.beginPath();ctx.moveTo(x+w*.16,y+h);ctx.lineTo(x+w+6,y+h);
   ctx.lineTo(x+w+16,y+h+10);ctx.lineTo(x+w*.16+12,y+h+10);ctx.closePath();ctx.fill();
+  /* VLAK-PITTE: 'n opgradering wat jy nie kan SIEN nie, het nie gebeur nie.
+     Ons verf hulle heel laaste in die funksie (sien vlakMerk hieronder) — maar die
+     palissade keer vroeg terug, so dié een kry niks. */
   if(G2.muur){                                  // palissade: pale
     const n=Math.max(3,Math.round(w/9));
     for(let i=0;i<n;i++){
@@ -1235,9 +1391,27 @@ function tekenGebou(g){
       ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;ctx.strokeRect(x-4+i*11,y+h+4,17,7);
     }
     // vorderingbalk
-    const p=(g.stadium+ (g.gelewer>=stDrempel(g.tipe,g.stadium)?g.werk/2.0:0))/ST_N;
+    const p=(g.stadium+ (g.gelewer>=sDrempel(g,g.stadium)?g.werk/2.0:0))/ST_N;
     ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(x,y-13,w,7);
-    ctx.fillStyle='#e0b64f';ctx.fillRect(x+1,y-12,(w-2)*clamp(p,0,1),5);
+    /* 'n Opgradering kry 'n GOUE balk sodat dit nie soos 'n nuwe bousite lyk nie —
+       die speler moet kan sien sy gebou word aangebou, nie vervang nie. */
+    ctx.fillStyle=g.opgradeer?'#e8c96a':'#e0b64f';
+    ctx.fillRect(x+1,y-12,(w-2)*clamp(p,0,1),5);
+  }
+  vlakMerk(g,x,y,w,h);
+}
+
+/* VLAK-PITTE — klein goue stippels op die dak se lyn. Leesbaar by lae zoem omdat
+   dit vorm-inligting is (tel die pitte), nie teks nie. Vlak 1 kry niks: 'n merker
+   op ALLES is geen merker nie. */
+function vlakMerk(g,x,y,w,h){
+  const v=gVlak(g);
+  if(v<2||!g.klaar)return;
+  const n=v-1;
+  for(let i=0;i<n;i++){
+    const px=x+w/2+(i-(n-1)/2)*9, py=y-6;
+    ctx.fillStyle='#e8c96a';ctx.beginPath();ctx.arc(px,py,3.4,0,TAU);ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.stroke();
   }
 }
 function tekenHoop(soort){
@@ -1423,10 +1597,13 @@ function raam(now){
 bakTerrein();kamBegin();
 // herstel gestoorde geboue
 for(const rec of (S.geb||[])){
-  const [tipe,x,y,klaar,stadium,gelewer,verbruik]=rec;
+  const [tipe,x,y,klaar,stadium,gelewer,verbruik,vlak,opgradeer,gelH,gelK]=rec;
   if(!GT[tipe])continue;
   const g=nuweGebou(tipe,x,y);
   g.klaar=!!klaar;g.stadium=stadium||0;g.gelewer=gelewer||0;g.verbruik=verbruik||0;
+  g.vlak=Math.min(vlak||1,maxVlak(tipe));      // klem, ingeval 'n tabel later krimp
+  g.opgradeer=opgradeer||0;
+  g.gelewerH=gelH||0;g.gelewerK=gelK||0;
   GEB.push(g);
 }
 // die mense
