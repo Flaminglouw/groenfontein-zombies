@@ -110,7 +110,7 @@ const KLIPBANK={x:1080,y:1720,r:120};      // die koppie se voet — waar klip g
 
 /* ============================== STOOR ============================== */
 const GF_KEY='gf_v2';
-let S={v:2,hout:0,klip:0,kos:6,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0};
+let S={v:2,hout:0,klip:0,kos:6,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0,geluk:50,rant:2};
 try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object'&&s.v===2)S=Object.assign(S,s);}catch(e){}
 let persistT=0;
 function persist(){
@@ -637,34 +637,59 @@ function bemanGeboue(){
 }
 
 /* ============================== GELUK ==============================
-   EEN syfer, en elke ry is 'n sigbare kaart-lyn — die speler moet kan sien
-   hoekom. (Bloudruk §Geluk, vereenvoudig vir Fase 2.) */
-let GELUK=50, GLRYE=[];
-function berekenGeluk(){
+   STRONGHOLD SE MODEL, nie 'n toestandsmeter nie. Bron-navorsing:
+   .claude/ontwerp/stronghold-meganika-2026-08-28.md (gemyn uit OpenSHC/Sourcehold
+   MIT en Stone Kingdoms Apache-2.0 — porteerbaar met attribusie).
+
+     geluk = klem(geluk + som(faktore), 0, 100)   — EEN keer per dag
+
+   Dit konvergeer NIE na 'n teiken nie; dit DRYF. 'n Slegte dag seer daarom
+   werklik, en 'n goeie week bou iets op. Ons vorige weergawe het elke raam
+   vanaf 50 herbereken — dit lees soos 'n meter, nie soos 'n dorp se humeur nie.
+   50 is die drempel: bo kom mense, onder loop hulle. */
+const RANTSOEN=[
+  {naam:'Geen',   mult:0,   gl:-8},
+  {naam:'Half',   mult:.5,  gl:-4},
+  {naam:'Normaal',mult:1,   gl: 0},
+  {naam:'Ekstra', mult:1.5, gl:+4},
+  {naam:'Dubbel', mult:2,   gl:+8},
+];
+let GLRYE=[];
+function gelukFaktore(){
   const rye=[];
-  let g=50;
-  const pop=MENSE.length, bed=beddens();
-  // kos
-  const kos=voorraad('kos');
-  if(kos<=0){g-=15;rye.push(['Geen kos in die spens',-15]);}
-  else if(kos<pop){g-=5;rye.push(['Kos is skraps',-5]);}
-  else if(kos>=pop*2){g+=8;rye.push(['Kos in oorvloed',8]);}
-  else{g+=5;rye.push(['Genoeg kos',5]);}
-  // skuiling
+  const pop=MENSE.length, bed=beddens(), kos=voorraad('kos');
+  /* RANTSOENE. Ons meet HONGER OOR DIE DAG, nie die rak op hierdie oomblik nie:
+     'n uitgehongerde dorp wissel heeltyd tussen 0 en 1 kos soos tuiniers aflewer,
+     en 'n oomblik-lesing sien dan toevallig "1" en noem hulle gevoed. Ons tel eerder
+     die maaltye wat MISGELOOP het. */
+  const misgeloop=hongerTel||hongerVorige;
+  const rIdx=(kos<=0||misgeloop)?0:S.rant;
+  const r=RANTSOEN[rIdx];
+  if(misgeloop)rye.push(['Honger — maaltye misgeloop',-8]);
+  else if(r.gl!==0)rye.push([kos<=0?'Niks om uit te deel nie':'Rantsoene: '+r.naam,r.gl]);
+  else rye.push(['Rantsoene: Normaal',0]);
+  // OORBEVOLKING — Stronghold se gedokumenteerde trap
   const buite=Math.max(0,pop-bed);
-  if(buite<=0&&bed>0){g+=8;rye.push(['Almal slaap onder ’n dak',8]);}
-  else if(buite>0){const d=-Math.min(12,buite*3);g+=d;rye.push([buite+' slaap buite',d]);}
-  // braai
-  if(braaiPlek()){
-    if(BRAAI_AAN){g+=10;rye.push(['Die braai brand',10]);}
-    else{g+=3;rye.push(['’n Braaiplek staan',3]);}
-  }else{g-=4;rye.push(['Geen braaiplek',-4]);}
-  // veiligheid
-  const naby=DWALERS.filter(d=>!d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)<420*420).length;
-  if(naby){const d=-8*naby;g+=d;rye.push([naby+' dwaler naby',d]);}
-  if(tel('wagtoring')){g+=4;rye.push(['’n Wagtoring hou wag',4]);}
+  if(buite>0){
+    const d=buite<=7?-2:buite<=15?-4:buite<=23?-6:-6-2*Math.ceil((buite-23)/8);
+    rye.push([buite+' slaap buite',d]);
+  }else if(bed>0)rye.push(['Almal onder ’n dak',+2]);
+  // DIE BRAAI — ons plaas se kroeg
+  if(braaiPlek())rye.push([BRAAI_AAN?'Die braai brand':'’n Braaiplek staan',BRAAI_AAN?+4:+1]);
+  else rye.push(['Geen braaiplek',-2]);
+  // VEILIGHEID
+  const naby=DWALERS.filter(d=>!d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)<460*460).length;
+  if(naby)rye.push([naby+' dwaler naby',-3*naby]);
+  if(tel('wagtoring'))rye.push(['Wagtoring hou wag',+2]);
   GLRYE=rye;
-  return clamp(Math.round(g),0,100);
+  return rye.reduce((a,b)=>a+b[1],0);
+}
+function dagDryf(){                       // een keer per spel-dag
+  const som=gelukFaktore();
+  hongerVorige=hongerTel; hongerTel=0;    // rol die honger-venster oor
+  S.geluk=clamp(Math.round(S.geluk+som),0,100);
+  if(som<0&&S.geluk<40)paSê('Die mense kla, ' + (voorraad('kos')<=0?'daar’s niks te ete nie.':'hoor jy?'));
+  persistSoon();
 }
 
 /* ============================== KLOK / DWALERS / PA ============================== */
@@ -792,6 +817,15 @@ function bouBalk(){
     const kl=document.createElement('button');
     kl.className='kn'+(KLOKAAN?' aan':'');kl.textContent='🔔 Klok';
     kl.onclick=()=>{luiKlok();bouBalk();};r.appendChild(kl);
+    /* DIE RANTSOEN-HEFBOOM — die sentrale Stronghold-besluit: vreet vinniger vir
+       'n gelukkiger dorp, of hou terug en oorleef. Tik loop deur die vyf vlakke. */
+    const rt=document.createElement('button');
+    const RN=RANTSOEN[S.rant];
+    rt.className='kn';
+    rt.innerHTML='🍽️ '+RN.naam+'<small>'+(RN.gl>0?'+':'')+RN.gl+' humeur · '+RN.mult+'× kos</small>';
+    rt.onclick=()=>{S.rant=(S.rant+1)%RANTSOEN.length;persistSoon();bouBalk();
+      plToast('Rantsoene: '+RANTSOEN[S.rant].naam);};
+    r.appendChild(rt);
     const pf=document.createElement('button');pf.className='kn'+(METE?' aan':'');pf.textContent='meet';
     pf.onclick=()=>{METE=!METE;mTye=[];document.getElementById('perf').style.display=METE?'block':'none';bouBalk();};
     r.appendChild(pf);
@@ -800,11 +834,13 @@ function bouBalk(){
 document.getElementById('hGeluk').onclick=()=>{
   const k=document.getElementById('glkaart');
   if(k.style.display==='block'){k.style.display='none';return;}
-  let h='';
-  for(const [naam,d] of GLRYE)
-    h+='<div class="r"><span>'+naam+'</span><span class="'+(d>=0?'op':'af')+'">'+(d>0?'+':'')+d+'</span></div>';
+  let h='',som=0;
+  for(const [naam,d] of GLRYE){som+=d;
+    h+='<div class="r"><span>'+naam+'</span><span class="'+(d>=0?'op':'af')+'">'+(d>0?'+':'')+d+'</span></div>';}
   h+='<div class="r" style="border-top:2px solid #5c4a2e;margin-top:6px;padding-top:6px">'+
-     '<span>Humeur</span><span>'+GELUK+'</span></div>';
+     '<span>Môre skuif dit</span><span class="'+(som>=0?'op':'af')+'">'+(som>0?'+':'')+som+'</span></div>'+
+     '<div class="r"><span>Humeur nou</span><span>'+S.geluk+'</span></div>'+
+     '<div class="r" style="color:#9aa07f;font-size:17px"><span>50+ trek mense · onder 40 loop hulle</span></div>';
   document.getElementById('glrye').innerHTML=h;
   k.style.display='block';
 };
@@ -869,12 +905,12 @@ function tik(wx,wy){
 }
 
 /* ============================== OPDATEER ============================== */
-let T=0, swerwerT=0, dwalerT=70;
+let T=0, swerwerT=0, dwalerT=70, kosKlok=0, swerwerModus=0, hongerTel=0, hongerVorige=0;
 let METE=false,mTye=[];
 function update(dt){
   T+=dt;S.tyd+=dt;
   const nuweDag=1+Math.floor(S.tyd/VOLLEDAG);
-  if(nuweDag!==S.dag){S.dag=nuweDag;persistSoon();}
+  if(nuweDag!==S.dag){S.dag=nuweDag;dagDryf();persistSoon();}
   const tvd=S.tyd%VOLLEDAG;
   // braai steek aan teen skemer
   const br=braaiPlek();
@@ -883,22 +919,65 @@ function update(dt){
   if(!wilBrand&&BRAAI_AAN)BRAAI_AAN=false;
 
   for(const m of MENSE)mensTik(m,dt);
-  GELUK=berekenGeluk();
+  gelukFaktore();                  // hou die kaart vars; die DRYF gebeur per dag
 
-  /* SWERWERS: 'n gelukkige plaas met 'n oop bed en kos trek mense — hulle STAP
-     die grondpad op (geen getal spring nie). */
+  /* DIE KOS-KLOK — 'n akkumulator wat EEN eenheid op 'n slag laat val, sodat die
+     spens sigbaar leegloop (Stronghold se model).
+     DIE YKING: een tuinier lewer ±16 kos per dag; teen drempel 60 eet 'n mens 4 per
+     dag, dus voed EEN tuinier VIER monde op Normaal. Dit maak kos die werklike
+     beperking — en eers dan beteken die hefboom iets: op Dubbel voed hy net twee. */
+  {
+    /* Die TEMPO volg die speler se keuse, nie die rak nie. Het ons hier
+       RANTSOEN[leë spens ? 0 : ...] gebruik, sou 'n leë spens die klok heeltemal
+       stop en dan tel geen enkele gemiste maaltyd nie — die dorp verhonger stil-stil
+       terwyl die humeur klim. Kies die speler self 'Geen', staan die klok wel — die
+       -8 kom dan reeds uit die rantsoen-ry. */
+    const r=RANTSOEN[S.rant];
+    if(r.mult>0&&MENSE.length){
+      kosKlok+=dt*MENSE.length*r.mult;
+      if(kosKlok>=60){
+        kosKlok-=60;                 // trek af, moenie nulstel nie — anders gaan die res verlore
+        if(voorraad('kos')>0){bykom('kos',-1);
+          const m=MENSE[(R()*MENSE.length)|0];
+          if(m)spanne(m.x,m.y-16,2,'#7fc95e');}
+        else hongerTel++;              // 'n maaltyd wat NIE gebeur het nie
+      }
+    }
+  }
+
+  /* AANKOMS EN VERTREK op Stone Kingdoms se gepubliseerde kurwe (Apache-2.0,
+     met dank): sekondes per mens = 51 x mod, stadigste naby 50 — 'n natuurlike
+     dooie band, sodat 'n dorp op die drempel nie flikker nie. */
   const bed=beddens();
-  if(GELUK>=60&&MENSE.length<bed&&voorraad('kos')>=4&&!KLOKAAN){
+  const p=S.geluk;
+  /* Een horlosie, twee rigtings — maar 'n wissel moet die horlosie herstel, anders
+     stap iemand op die presiese oomblik weg wat die humeur dip. */
+  const mod=(p>=50&&MENSE.length<bed&&voorraad('kos')>=3)?1:(p<40&&MENSE.length>3)?-1:0;
+  if(mod!==swerwerModus){swerwerModus=mod;swerwerT=mod?18:0;}
+  if(p>=50&&MENSE.length<bed&&voorraad('kos')>=3&&!KLOKAAN){
+    const km=0.08*Math.pow((100-p)/25,3)+0.09;
     swerwerT-=dt;
     if(swerwerT<=0){
-      swerwerT=42-Math.min(20,(GELUK-60)*.7);
+      swerwerT=51*km;
       const m=maakMens(1760,WH-60);
       m.taak={tipe:'stap',tx:WERF.x+rand(-70,70),ty:WERF.y+rand(60,160)};
-      MENSE.push(m);bykom('kos',-3);
+      MENSE.push(m);bykom('kos',-2);
       plToast(m.naam+' het by die plaas aangekom.');
       klank(560,.12,.1);bemanGeboue();persistSoon();
     }
-  }else swerwerT=Math.min(swerwerT,20);
+  }else if(p<40&&MENSE.length>3&&!KLOKAAN){
+    const km=0.08*p*p/500+0.1;
+    swerwerT-=dt;
+    if(swerwerT<=0){
+      swerwerT=51*km;
+      // die nuutste eerste — hy het die minste hier belê
+      const m=MENSE[MENSE.length-1];
+      if(m.werkplek){const i=m.werkplek.werkers.indexOf(m);if(i>=0)m.werkplek.werkers.splice(i,1);}
+      MENSE.pop();
+      plToast(m.naam+' het die plaas verlaat.');
+      klank(180,.3,.12);bemanGeboue();persistSoon();
+    }
+  }else swerwerT=Math.min(swerwerT,25);
 
   // bome
   for(const b of BOME){
@@ -978,9 +1057,9 @@ function update(dt){
   document.getElementById('hKos').textContent=voorraad('kos');
   document.getElementById('hPop').textContent=MENSE.length;
   document.getElementById('hBed').textContent='/'+bed;
-  document.getElementById('hGl').textContent=GELUK;
+  document.getElementById('hGl').textContent=S.geluk;
   document.getElementById('hGeluk').firstChild.textContent=
-    (GELUK>=70?'😀 ':GELUK>=55?'🙂 ':GELUK>=40?'😐 ':'☹️ ');
+    (S.geluk>=70?'😀 ':S.geluk>=55?'🙂 ':S.geluk>=40?'😐 ':'☹️ ');
   document.getElementById('dagwys').textContent='Dag '+S.dag+(nagAlpha()>.3?' · nag':'');
 }
 
