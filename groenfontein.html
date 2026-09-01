@@ -112,6 +112,19 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
 #brkaart .brkn{font-size:17px;padding:5px 8px;min-height:38px}
 #brkaart .brvoet{margin-top:6px;padding-top:5px;border-top:2px solid var(--lyn);
   color:var(--dof);font-size:16px}
+/* --- SPAN-BALK: die bevel-balk. Hy VERVANG die bou-balk (balk.style.display='none')
+   sodra 'n span gekies is — mode-eksklusiwiteit wat jy met jou oë sien, nie
+   'n vlaggie wat jy moet onthou nie. pointer-events:auto op die HELE paneel is
+   nie opsioneel nie: sonder dit val 'n tik tussen die knoppies deur op die
+   bou-knoppies daaronder. --- */
+#spanbalk{position:fixed;left:0;right:0;bottom:0;z-index:8;display:none;
+  pointer-events:auto;background:rgba(10,14,7,.94);border-top:2px solid var(--goud);
+  padding:6px 6px 8px}
+#spanbalk .kop{font-size:18px;color:var(--goud);padding:2px 6px 5px;line-height:1.15}
+#spanbalk .kop .wenk{display:block;font-size:15px;color:var(--dof)}
+#spanbalk .ry{display:flex;gap:6px;overflow-x:auto;padding:2px 4px;scrollbar-width:none}
+#spanbalk .ry::-webkit-scrollbar{display:none}
+@media(max-width:560px){#spanbalk .kop{font-size:16px}#spanbalk .kop .wenk{font-size:13px}}
 @media(max-width:560px){.kn{font-size:17px;padding:5px 8px}.kn small{font-size:13px}
   #hud .b{font-size:17px;padding:2px 7px}}
 </style>
@@ -138,6 +151,7 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <div id="rye"></div>
   <div id="winkel"></div>
 </div>
+<div id="spanbalk"></div>
 <div id="perf"></div>
 
 <script>
@@ -303,7 +317,7 @@ function beginOpgradeer(g){
   g.gelewer=0; g.gelewerH=0; g.gelewerK=0;
   g.opPad=0; g.opPadH=0; g.opPadK=0;
   g.verbruik=0; g.werk=0; g.bouer=null;
-  for(const w of g.werkers)if(w)w.werkplek=null;   // die werkers is nou vry — die gebou werk nie
+  for(const w of g.werkers)if(w){w.werkplek=null;w.vasPos=false;}   // die werkers is nou vry — die gebou werk nie
   g.werkers=[];
   plToast(GT[g.tipe].naam+' word opgegradeer na vlak '+g.opgradeer+'.');
   klank(430,.12,.11); bemanGeboue(); persistSoon();
@@ -501,7 +515,8 @@ function maakMens(x,y){
   const m={naam:volgendeNaam(),x,y,spd:52+R()*10,rig:1,
     taak:null,dra:null,tred:R()*TAU,slaan:0,idleT:R()*3,sê:0,vlug:0,
     klr:KLEURE[(R()*KLEURE.length)|0],hare:HARE[(R()*HARE.length)|0],
-    werkplek:null,stoepPlek:undefined};
+    werkplek:null,stoepPlek:undefined,
+    staan:null,bevelSite:null,bevelBoom:null,vasPos:false};
   return m;
 }
 /* Losstaande vragte op die grond. `soort` is hout|klip|kos. */
@@ -673,6 +688,31 @@ function soekTaak(m){
     const gv=broerTeRed(m);
     if(gv){gv.eis=m;if(m.dra)losVrag(m);return {tipe:'red',b:gv,fase:0};}
   }
+  /* 0. BEVEL — 'n uitdruklike opdrag van die speler oorheers alle outonomie. */
+  if(m.bevelSite){
+    const site=m.bevelSite;
+    if(site.klaar||GEB.indexOf(site)<0){m.bevelSite=null;}
+    else{
+      const s=watKosSite(site);
+      if(s&&voorraad(s)>0){
+        site.opPad++;
+        if(s==='hout')site.opPadH=(site.opPadH||0)+1;else site.opPadK=(site.opPadK||0)+1;
+        return {tipe:'vat',site,soort:s,fase:0};
+      }
+      if(!site.bouer&&site.gelewer>site.verbruik){site.bouer=m;return {tipe:'bou',site};}
+      /* Niks om NOU te doen nie: hy wag SIGBAAR by die site. Die bevel is
+         gehoorsaam al staan hy stil — dit lees beter as 'n man wat wegdwaal. */
+      return {tipe:'stap',tx:site.x+rand(-34,34),ty:site.y+GT[site.tipe].h/2+rand(12,30)};
+    }
+  }
+  if(m.bevelBoom){
+    const b=m.bevelBoom;m.bevelBoom=null;          // eenmalige opdrag
+    if(b.toestand==='staan'&&b.geëis<1){b.geëis++;b.gemerk=true;return {tipe:'kap',boom:b};}
+  }
+  if(m.staan){
+    if(dist2(m.x,m.y,m.staan.x,m.staan.y)>18*18)return {tipe:'gaan',tx:m.staan.x,ty:m.staan.y};
+    return {tipe:'wag',t:1.1+R()*1.3};
+  }
   // 1. bousite kort materiaal en ons het dit
   const site=oopSite();
   if(site){
@@ -790,7 +830,7 @@ function mensTik(m,dt){
     return;
   }
   m.stoepPlek=undefined;
-  if(!m.taak&&m.dra){                 // vangnet: 'n vrag sonder taak gaan hoop toe
+  if(!m.taak&&m.dra&&!m.staan){        // vangnet: 'n vrag sonder taak gaan hoop toe — behalwe op pos
     const h=hoopVan(m.dra);
     m.taak={tipe:'aflewer',tx:h.x+rand(-8,8),ty:h.y+rand(-4,10)};
   }
@@ -812,6 +852,13 @@ function mensTik(m,dt){
   switch(t.tipe){
   case 'stap':
     if(stapNa(m,t.tx,t.ty,dt))m.taak=null;
+    break;
+  case 'gaan':                    // op pad na 'n staanplek
+    if(stapNa(m,t.tx,t.ty,dt))m.taak=null;
+    break;
+  case 'wag':                     // OP pos: hy staan, hy soek nie werk nie
+    t.t-=dt;
+    if(t.t<=0)m.taak=null;
     break;
   case 'aflewer':
     if(stapNa(m,t.tx,t.ty,dt)){
@@ -1278,6 +1325,7 @@ function kanBekostig(tipe){
 function kiesBou(tipe){
   PLAAS=(PLAAS===tipe)?null:tipe;
   if(PLAAS){
+    losSpan();                    // plasing en bevele is uitsluitend van mekaar
     SPOOK.x=KAM.x;SPOOK.y=KAM.y+60;
     if(GT[PLAAS].muur){
       MUUR.begin=null;muurSnapSpook();
@@ -1332,6 +1380,11 @@ function bouBalk(){
   }else if(GEKIES&&GEKIES.tipe==='kaserne'&&GEKIES.klaar){
     kasBalkRy(r);
   }else{
+    const al=document.createElement('button');
+    al.className='kn';
+    al.innerHTML='👥 Almal<small>'+MENSE.length+' mense</small>';
+    al.onclick=()=>kiesAlmal();
+    r.appendChild(al);
     const mk=document.createElement('button');
     mk.className='kn'+(MODUS==='merk'?' aan':'');mk.textContent='🪓 Merk bome';
     mk.onclick=()=>{MODUS=MODUS==='merk'?null:'merk';
@@ -1644,12 +1697,314 @@ document.getElementById('gkOpg').onclick=()=>{
   if(GEKIES&&beginOpgradeer(GEKIES))kiesGebou(GEKIES);
 };
 
+/* ============================== SPAN — GROEP-SELEKSIE EN BEVELE ==============================
+   DIE MODUS-PROBLEEM IS DIE HELE ONTWERP. Ses dinge wil 'n tik hê: kamera-sleep,
+   plasing (PLAAS/SPOOK), die klokpaal, boom-merk, die gebou-kaart, en nou seleksie.
+   Ons los dit met DRIE reëls, nie met slimmigheid nie:
+
+   1. GEEN SLEEP-GEBAAR. Sleep en knyp bly 100% die kamera s'n. 'n Sleep-boks werk
+      nie met 'n vinger nie en 'n sleep-bevel sou die enigste gebaar steel wat die
+      speler heeldag gebruik. Ons raak los(), pointermove en die 9px-hek NIE aan nie.
+   2. VASTE TIK-LEER (sien tik() hieronder). Uitdruklike modusse (PLAAS, MERK) en
+      vaste plekke (die klok) wen ALTYD. Eers daarna praat seleksie.
+   3. DIE BALK VERVANG DIE BALK. Terwyl 'n span gekies is, is #balk weg en #spanbalk
+      in sy plek. Jy kán dus nie 'n bou-knoppie druk terwyl jy bevele gee nie, en
+      jy kán nie in merk-modus wees met 'n span in die hand nie. Die modus is
+      sigbaar, nie onthoubaar nie.
+
+   Twee soorte bevele, doelbewus verskillend:
+     STAANPLEK (m.staan)  — VOLHOUDEND. Hy staan tot jy hom terugstuur werk toe.
+     KAP-BEVEL (m.bevelBoom) — EENMALIG. Boom om, dan is hy weer sy eie baas.
+     BOUSITE  (m.bevelSite) — hou tot die gebou klaar is.
+   Die prys is ekonomies en werklik: 'n tuinier op 'n pos lewer nie sy ~16 kos/dag
+   nie, dus voed elke wag wat jy uit die tuin trek vier monde minder. Ons raak
+   die dryf-geluk en die kos-klok NIE aan nie — die koste sit reeds in die kos. */
+const SPAN=new Set();          // die gekose eenhede (insetorde bly behoue)
+let VOEGBY=false;              // ➕ Kies meer: elke tik voeg by i.p.v. vervang
+let FORMASIE='blok';
+const FORM_ORDE=['blok','linie','kring'];
+const FORM_WYS={blok:['▦','Blok'],linie:['▬','Linie'],kring:['◯','Kring']};
+let BEVELMERK={x:0,y:0,t:0};   // die kort ring waar jy laas beveel het
+const ROLNAAM={kap:'Kappers',klip:'Delwers',kos:'Boere',vry:'Vrye hande'};
+function rolVan(m){const g=m.werkplek;return (g&&GT[g.tipe].werk)?GT[g.tipe].werk:'vry';}
+/* EEN naat vir die toekoms: as daar soldate en broers kom, word dit
+   `return MENSE.concat(SOLDATE,BROERS)` en die hele stelsel werk onveranderd. */
+/* Vir nou MENSE. Soldate het hul eie versamelpunt (kaserne) en broers hul eie pos
+   (broerRaak); een lys vir almal is die volgende stap, nie hierdie een nie. */
+function eenhede(){return MENSE;}
+function spanLys(){const l=[];for(const m of SPAN)if(eenhede().indexOf(m)>=0)l.push(m);return l;}
+function spanSkoon(){for(const m of [...SPAN])if(eenhede().indexOf(m)<0)SPAN.delete(m);}
+
+/* --- RAAK-TEIKENS ---------------------------------------------------------
+   Die vinger-toeslag word in SKERM-pixels gedink en na wêreld-pixels omgereken:
+   by z=0.5 is 'n mens 20 skermpixels hoog en 'n duim is dit nie. Die kap op 22
+   keer dat een mens by lae zoem 'n halwe werf opsluk. Die boks bly NOU (±11 om
+   die lyf) sodat die presieser teiken wen: 'n gebou se boks is 'n hele dak wyd,
+   dus is 'n treffer op 'n mens byna altyd die werklike bedoeling. */
+function mensOnder(wx,wy){
+  const v=clamp(13/KAM.z,7,22);
+  let beste=null,bd=1e12;
+  for(const m of eenhede()){
+    if(Math.abs(wx-m.x)>11+v)continue;
+    if(wy<m.y-32-v||wy>m.y+6+v)continue;
+    const d=dist2(wx,wy,m.x,m.y-14);
+    if(d<bd){bd=d;beste=m;}
+  }
+  return beste;
+}
+function boomOnder(wx,wy,r){
+  r=r||40;                       // 40 en nie 46 nie: 'n bevel op die GROND is die
+  let beste=null,bd=r*r;         // verstek, so die boom moet werklik onder jou wees
+  for(const b of BOME){
+    if(b.toestand!=='staan')continue;
+    const d=dist2(wx,wy,b.x,b.y-10);
+    if(d<bd){bd=d;beste=b;}
+  }
+  return beste;
+}
+
+/* --- SELEKSIE -------------------------------------------------------------- */
+function kiesEen(m){
+  if(VOEGBY){
+    if(SPAN.has(m)){SPAN.delete(m);klank(300,.05,.07);}
+    else{SPAN.add(m);klank(640,.05,.08);}
+  }else{
+    SPAN.clear();SPAN.add(m);klank(600,.05,.08);
+    plToast(m.naam+' — '+ROLNAAM[rolVan(m)]);
+  }
+  kiesGebou(null);               // een paneel op 'n slag
+  spanBalk();
+}
+/* DUBBELTIK = almal van sy soort. Dit is die foon se antwoord op ctrl-klik:
+   een vinger, geen modus, en dit is presies die groep wat jy in 'n bouspel wil hê
+   ("al my kappers"). */
+function kiesSoort(m){
+  const r=rolVan(m);
+  if(!VOEGBY)SPAN.clear();
+  let n=0;for(const q of eenhede())if(rolVan(q)===r){SPAN.add(q);n++;}
+  plToast(n+' '+ROLNAAM[r].toLowerCase()+' gekies.');
+  klank(700,.09,.1);kiesGebou(null);spanBalk();
+}
+function kiesAlmal(){
+  SPAN.clear();for(const m of eenhede())SPAN.add(m);
+  plToast(SPAN.size+' mense gekies.');klank(700,.1,.1);kiesGebou(null);spanBalk();
+}
+function losSpan(){SPAN.clear();VOEGBY=false;klank(280,.06,.07);spanBalk();}
+
+/* --- TAAK-OPRUIMING --------------------------------------------------------
+   'n Bevel wat 'n lopende taak oorskryf MOET die taak se eise terugtrek. Sonder
+   dit tel site.opPad op en die site glo vir ewig dat materiaal onderweg is —
+   presies die starvation-fout wat die klok-tak reeds moes ontwyk. */
+function staakTaak(m){
+  const t=m.taak;
+  if(t){
+    if(t.tipe==='vat'&&t.site){t.site.opPad--;
+      if(t.soort==='hout')t.site.opPadH--;else t.site.opPadK--;}
+    else if(t.tipe==='bou'&&t.site){t.site.bouer=null;}
+    else if(t.tipe==='kap'&&t.boom){t.boom.geëis=Math.max(0,t.boom.geëis-1);}
+    else if(t.tipe==='dra'&&t.v){t.v.geëis=0;}
+  }
+  m.taak=null;m.slaan=0;
+}
+function losBevel(m){m.bevelSite=null;m.bevelBoom=null;}
+
+/* --- WERKPLEK-TOEWYSING ----------------------------------------------------
+   'n Uitdruklike bevel moet LAND. Is die werkplek vol, gooi ons die laaste
+   NIE-vasgepende werker uit (hy is outomaties daar geplaas, nie gekies nie) —
+   anders doen die knoppie stilweg niks en die speler leer om hom te wantrou. */
+function losWerkplek(m){
+  if(!m.werkplek)return;
+  const i=m.werkplek.werkers.indexOf(m);
+  if(i>=0)m.werkplek.werkers.splice(i,1);
+  m.werkplek=null;m.vasPos=false;
+}
+function stelWerkplek(m,g){
+  if(m.werkplek===g){m.vasPos=true;return true;}
+  const plekke=gPlekke(g);
+  if(g.werkers.length>=plekke){
+    let uit=null;
+    for(let i=g.werkers.length-1;i>=0;i--)if(!g.werkers[i].vasPos){uit=g.werkers[i];break;}
+    if(!uit)return false;
+    staakTaak(uit);losWerkplek(uit);
+  }
+  losWerkplek(m);
+  m.werkplek=g;m.vasPos=true;g.werkers.push(m);
+  return true;
+}
+
+/* --- FORMASIES -------------------------------------------------------------
+   26 wêreld-pixels tussen mense: die sprite is 10 breed en stapNa stop op 12,
+   dus staan hulle skouer-aan-skouer sonder dat twee lywe op mekaar eindig.
+   Die y-spasiëring is .62x omdat die hele wêreld op daardie skuinste geteken word. */
+function formasiePunte(n,cx,cy,vorm){
+  const sp=26,p=[];
+  if(vorm==='linie'){
+    for(let i=0;i<n;i++)p.push([cx+(i-(n-1)/2)*sp, cy+((i%2)?5:-5)]);
+  }else if(vorm==='kring'){
+    const r=Math.max(34,sp*n/TAU);
+    for(let i=0;i<n;i++){const a=i/n*TAU-Math.PI/2;
+      p.push([cx+Math.cos(a)*r, cy+Math.sin(a)*r*.62]);}
+  }else{
+    const k=Math.max(1,Math.ceil(Math.sqrt(n))), rye=Math.ceil(n/k);
+    for(let i=0;i<n;i++){
+      const ry=(i/k)|0, ko=i%k, inRy=Math.min(k,n-ry*k);
+      p.push([cx+(ko-(inRy-1)/2)*sp, cy+(ry-(rye-1)/2)*sp*.62]);
+    }
+  }
+  for(const q of p){q[0]=clamp(q[0],48,WW-48);q[1]=clamp(q[1],48,WH-48);}
+  return p;
+}
+
+/* --- BEVELE ---------------------------------------------------------------- */
+function bevelStaan(cx,cy,lys){
+  lys=lys||spanLys();
+  if(!lys.length)return;
+  const pte=formasiePunte(lys.length,cx,cy,FORMASIE);
+  const oor=lys.slice();
+  /* Naaste-mens-per-plek. Sonder hierdie toewysing kruis die span homself en dit
+     lyk soos 'n gemors in plaas van 'n formasie. n<=24, dus is O(n²) gratis. */
+  for(const [px,py] of pte){
+    let bi=-1,bd=1e12;
+    for(let i=0;i<oor.length;i++){const d=dist2(oor[i].x,oor[i].y,px,py);if(d<bd){bd=d;bi=i;}}
+    if(bi<0)break;
+    const m=oor.splice(bi,1)[0];
+    losBevel(m);staakTaak(m);
+    m.staan={x:px,y:py};
+    m.taak={tipe:'gaan',tx:px,ty:py};
+    m.idleT=0;
+  }
+  BEVELMERK={x:cx,y:cy,t:1.1};
+  VOEGBY=false;klank(520,.06,.08);spanBalk();
+}
+function bevelGebou(g,lys){
+  lys=lys||spanLys();
+  if(!lys.length)return;
+  if(!g.klaar){                                   // 'n bousite: gaan help bou
+    for(const m of lys){losBevel(m);staakTaak(m);m.staan=null;m.bevelSite=g;m.idleT=0;}
+    plToast(lys.length+' help bou aan die '+GT[g.tipe].naam.toLowerCase()+'.');
+  }else if(GT[g.tipe].werk){                      // 'n werkplek: vat die pos
+    const plekke=gPlekke(g), vat=lys.slice(0,plekke), res=lys.slice(plekke);
+    let n=0;
+    for(const m of vat){losBevel(m);staakTaak(m);m.staan=null;m.idleT=0;
+      if(stelWerkplek(m,g))n++;}
+    plToast(n?n+' werk nou by die '+GT[g.tipe].naam.toLowerCase()+'.'
+             :'Die '+GT[g.tipe].naam.toLowerCase()+' se plekke is vol.');
+    /* Meer mense as plekke? Die res kry 'n staanplek langs die gebou i.p.v. 'n
+       stil geïgnoreerde bevel. */
+    if(res.length)bevelStaan(g.x,g.y+GT[g.tipe].h/2+26,res);
+    bemanGeboue();
+  }else{                                          // huis, spens, braai, toring…
+    bevelStaan(g.x,g.y+GT[g.tipe].h/2+22,lys);return;
+  }
+  BEVELMERK={x:g.x,y:g.y,t:1.1};
+  VOEGBY=false;klank(560,.07,.09);spanBalk();
+}
+/* EEN BOOM PER MENS. 'n Span kap 'n BOSSIE skoon; almal aan een stam is 'n
+   bevel wat lyk of hy misluk het (net een kan slaan). Die res van die bome word
+   ook GEMERK, sodat wie klaar is by die bestaande gemerkte-boom-reël aansluit. */
+function bevelBome(b0,lys){
+  lys=lys||spanLys();
+  if(!lys.length)return;
+  const bome=[b0];
+  const kand=BOME.filter(b=>b!==b0&&b.toestand==='staan'&&b.geëis<1&&
+                            dist2(b.x,b.y,b0.x,b0.y)<200*200)
+                 .sort((p,q)=>dist2(p.x,p.y,b0.x,b0.y)-dist2(q.x,q.y,b0.x,b0.y));
+  while(bome.length<lys.length&&kand.length)bome.push(kand.shift());
+  for(const b of bome)b.gemerk=true;
+  for(let i=0;i<lys.length;i++){
+    const m=lys[i];
+    losBevel(m);staakTaak(m);m.staan=null;m.idleT=0;
+    if(i<bome.length)m.bevelBoom=bome[i];         // die res val terug op die merke
+  }
+  plToast(bome.length+(bome.length===1?' boom':' bome')+' gemerk vir '+lys.length+' hande.');
+  BEVELMERK={x:b0.x,y:b0.y,t:1.1};
+  VOEGBY=false;klank(500,.07,.09);spanBalk();
+}
+function werkToe(lys){
+  lys=lys||spanLys();
+  for(const m of lys){
+    losBevel(m);m.staan=null;
+    if(m.taak&&(m.taak.tipe==='wag'||m.taak.tipe==='gaan')){m.taak=null;m.idleT=0;}
+  }
+  plToast(lys.length+' gaan terug werk toe.');klank(480,.07,.08);spanBalk();
+}
+function bevelTik(wx,wy){
+  /* Die klok oorheers alles — 'n bevel wat stil niks doen nie, is erger as 'n nee. */
+  if(KLOKAAN){plToast('Die klok lui — almal skuil eers.');klank(150,.12,.08);return;}
+  const lys=spanLys();
+  if(!lys.length){losSpan();return;}
+  const g=gebOnder(wx,wy);  if(g){bevelGebou(g,lys);return;}
+  const b=boomOnder(wx,wy); if(b){bevelBome(b,lys);return;}
+  bevelStaan(wx,wy,lys);
+}
+
+/* --- DIE SPAN-BALK --------------------------------------------------------- */
+function spanBalk(){
+  const el=document.getElementById('spanbalk');
+  spanSkoon();
+  const n=SPAN.size;
+  document.getElementById('balk').style.display=n?'none':'flex';
+  if(!n){el.style.display='none';VOEGBY=false;return;}
+  const tel={};for(const m of SPAN){const r=rolVan(m);tel[r]=(tel[r]||0)+1;}
+  const dele=Object.keys(tel).map(k=>tel[k]+' '+ROLNAAM[k].toLowerCase()).join(' · ');
+  el.innerHTML='<div class="kop">👥 '+n+' gekies — '+dele+
+    '<span class="wenk">tik grond = staan hier · tik ’n gebou = werk daar · tik ’n boom = kap</span></div>'+
+    '<div class="ry" id="spanRy"></div>';
+  const r=document.getElementById('spanRy');
+  const kn=(kls,html,fn)=>{const b=document.createElement('button');
+    b.className='kn'+kls;b.innerHTML=html;b.onclick=fn;r.appendChild(b);return b;};
+  kn(' rooi','✗ Los<small>'+n+' gekies</small>',losSpan);
+  kn(VOEGBY?' aan':'','➕ Kies meer<small>'+(VOEGBY?'tik nog mense':'een op ’n slag')+'</small>',
+     ()=>{VOEGBY=!VOEGBY;spanBalk();});
+  const fw=FORM_WYS[FORMASIE];
+  kn('',fw[0]+' '+fw[1]+'<small>staanvorm</small>',()=>{
+    FORMASIE=FORM_ORDE[(FORM_ORDE.indexOf(FORMASIE)+1)%FORM_ORDE.length];
+    const op=spanLys().filter(m=>m.staan);
+    if(op.length){let sx=0,sy=0;for(const m of op){sx+=m.staan.x;sy+=m.staan.y;}
+      bevelStaan(sx/op.length,sy/op.length,op);}          // herskik dadelik, sigbaar
+    else spanBalk();
+    plToast('Staanvorm: '+FORM_WYS[FORMASIE][1]);
+  });
+  kn(' groen','🏠 Werk toe<small>los die pos</small>',()=>werkToe(spanLys()));
+  kn(KLOKAAN?' aan':'','🔔 Klok<small>almal skuil</small>',()=>{luiKlok();spanBalk();bouBalk();});
+  kn('','👥 Almal<small>'+eenhede().length+' mense</small>',kiesAlmal);
+  el.style.display='block';
+}
+
+/* --- GRONDMERKE ------------------------------------------------------------ */
+function tekenSpanMerke(){
+  for(const m of SPAN){
+    if(!m.staan)continue;
+    ctx.strokeStyle='rgba(232,201,106,.7)';ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.moveTo(m.staan.x-5,m.staan.y-3);ctx.lineTo(m.staan.x+5,m.staan.y+3);
+    ctx.moveTo(m.staan.x+5,m.staan.y-3);ctx.lineTo(m.staan.x-5,m.staan.y+3);
+    ctx.stroke();
+  }
+  if(BEVELMERK.t>0){
+    const f=1-BEVELMERK.t/1.1, rr=10+f*34;
+    ctx.strokeStyle='rgba(232,201,106,'+(1-f).toFixed(2)+')';ctx.lineWidth=3;
+    ctx.beginPath();ctx.ellipse(BEVELMERK.x,BEVELMERK.y,rr,rr*.55,0,0,TAU);ctx.stroke();
+  }
+}
+
+let laasTikT=0,laasTikX=0,laasTikY=0;
+function merkTik(wx,wy){                     // die bestaande merk-gedrag, net uitgelig
+  let beste=null,bd=46*46;
+  for(const b of BOME){
+    if(b.toestand!=='staan')continue;
+    const d=dist2(wx,wy,b.x,b.y-10);
+    if(d<bd){bd=d;beste=b;}
+  }
+  if(beste){beste.gemerk=!beste.gemerk;klank(beste.gemerk?520:260,.05,.09);}
+}
+
 function tik(wx,wy){
   document.getElementById('glkaart').style.display='none';
   document.getElementById('belkaart').style.display='none';
   if(PLAAS&&GT[PLAAS].muur){muurKlik(wx,wy);return;}   // muur: tik begin, dan einde
   if(PLAAS){SPOOK.x=wx;SPOOK.y=wy;return;}          // plasing: tik verskuif die spook
-  if(dist2(wx,wy,KLOKPAAL.x+7,KLOKPAAL.y+14)<52*52){luiKlok();bouBalk();return;}
+  if(dist2(wx,wy,KLOKPAAL.x+7,KLOKPAAL.y+14)<52*52){luiKlok();bouBalk();spanBalk();return;}
   if(broerRaak(wx,wy))return;                      // held kies / held stuur
   if(MODUS==='rally'){                       // uitdruklike modus wen, soos merk en plasing
     S.rally={x:Math.round(wx),y:Math.round(wy)};
@@ -1666,19 +2021,20 @@ function tik(wx,wy){
   if(MODUS!=='merk'){
     const n=nesOnder(wx,wy);                   // neste staan ver van geboue af
     if(n){kiesNes(n);klank(300,.06,.08);return;}
+    /* SPAN: tik 'n mens = KIES hom (dubbeltik = sy hele soort); met 'n span in die hand is
+       elke ander tik 'n BEVEL (gebou / boom / grond). Mens VOOR span: "tik 'n mens = kies hom"
+       moet een reël bly. */
+    const nou=performance.now();
+    const dubbel=(nou-laasTikT<340)&&dist2(wx,wy,laasTikX,laasTikY)<30*30;
+    laasTikT=nou;laasTikX=wx;laasTikY=wy;
+    const mm=mensOnder(wx,wy);
+    if(mm){if(dubbel)kiesSoort(mm);else kiesEen(mm);return;}
+    if(SPAN.size){bevelTik(wx,wy);return;}
     const g=gebOnder(wx,wy);
     kiesGebou(g);                                    // null sluit die paneel
     if(g){klank(400,.05,.07);return;}
   }
-  if(MODUS==='merk'){
-    let beste=null,bd=46*46;
-    for(const b of BOME){
-      if(b.toestand!=='staan')continue;
-      const d=dist2(wx,wy,b.x,b.y-10);
-      if(d<bd){bd=d;beste=b;}
-    }
-    if(beste){beste.gemerk=!beste.gemerk;klank(beste.gemerk?520:260,.05,.09);}
-  }
+  if(MODUS==='merk')merkTik(wx,wy);
 }
 
 
@@ -1799,6 +2155,7 @@ function update(dt){
       // die nuutste eerste — hy het die minste hier belê
       const m=MENSE[MENSE.length-1];
       if(m.werkplek){const i=m.werkplek.werkers.indexOf(m);if(i>=0)m.werkplek.werkers.splice(i,1);}
+      SPAN.delete(m);m.staan=null;spanBalk();   // 'n vertrekker val uit die seleksie
       MENSE.pop();
       plToast(m.naam+' het die plaas verlaat.');
       klank(180,.3,.12);bemanGeboue();persistSoon();
@@ -1883,6 +2240,7 @@ function update(dt){
   for(const k of KRAAIE)k.a+=dt*.35;
   for(const m of MENSE)if(m.sê>0)m.sê-=dt;
   if(toastT>0)toastT-=dt;
+  if(BEVELMERK.t>0)BEVELMERK.t-=dt;
   if(persistT>0){persistT-=dt;if(persistT<=0)persist();}
   // HUD
   document.getElementById('hHout').textContent=voorraad('hout');
@@ -2414,6 +2772,14 @@ GEBLAAI.push((g,o)=>{
 function tekenMens(m){
   const wip=Math.sin(m.tred)*(m.dra?1.4:1.0);
   const x=m.x,y=m.y;
+  if(SPAN.has(m)){
+    /* Ring onder die voete PLUS 'n kepie bo die kop: by lae zoem is die ring
+       vier pixels en 'n span in 'n gedrang moet steeds tel-baar wees. */
+    ctx.strokeStyle='#e8c96a';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(x,y+2,11,4.4,0,0,TAU);ctx.stroke();
+    ctx.fillStyle='#e8c96a';ctx.fillRect(x-1.5,y-41,3,5);
+  }
+
   ctx.fillStyle='rgba(10,14,7,.35)';
   ctx.beginPath();ctx.ellipse(x,y+2,8,3,0,0,TAU);ctx.fill();
   ctx.save();ctx.translate(x,y+wip*.4);
@@ -3043,6 +3409,7 @@ function render(){
     ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;ctx.strokeRect(v.x-9,v.y-4,18,8);
   }
   tekenHoop('hout');tekenHoop('klip');if(!hetSpens())tekenHoop('kos');
+  tekenSpanMerke();                    // grondmerke, onder die y-gesorteerde lywe
   // die spook
   if(PLAAS&&GT[PLAAS].muur)muurSpook();   // 'n muur wys as LYN, nie as een blok nie
   else if(PLAAS){
@@ -4955,7 +5322,7 @@ if(!S.geb||!S.geb.length){
 }
 nesBegin();
 broerLaai();
-bemanGeboue();bouBalk();
+bemanGeboue();bouBalk();spanBalk();
 herstelKrygsmag();
 requestAnimationFrame(raam);
 </script>
