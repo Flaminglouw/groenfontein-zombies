@@ -88,6 +88,7 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <div class="b">🪵 <b id="hHout">0</b></div>
   <div class="b">🪨 <b id="hKlip">0</b></div>
   <div class="b">🥔 <b id="hKos">0</b></div>
+  <div class="b" id="hSoorte" title="Kossoorte op die tafel">—</div>
   <div class="b">👥 <b id="hPop">0</b><span class="dof" id="hBed"></span></div>
   <div class="b gl" id="hGeluk">🙂 <b id="hGl">50</b></div>
   <div id="dagwys">Dag 1</div>
@@ -177,7 +178,17 @@ const GT={
   klipgroef:{naam:'Klipgroef',    ikoon:'⛏️', koste:{hout:8},          w:82, h:66, werk:'klip', plekke:2,
              help:'Delwers haal klip by die koppie. Bou hom naby die klipbank.'},
   tuin:     {naam:'Groentetuin',  ikoon:'🥔', koste:{hout:4},          w:96, h:80, werk:'kos', plekke:2,
+             kossoort:'groente', oesT:5, kosPerWerker:16,
              help:'Twee boere lewer kos aan die spens.'},
+  hoenderhok:{naam:'Hoenderhok', ikoon:'🐔', koste:{hout:5,klip:1}, w:74, h:58,
+             werk:'kos', plekke:1, kossoort:'vleis', oesT:9, kosPerWerker:12,
+             help:'Een oppasser bring vleis. ’n Tweede kossoort lig die humeur.'},
+  visserhut:{naam:'Visserhut',   ikoon:'🐟', koste:{hout:5},        w:70, h:56,
+             werk:'kos', plekke:1, kossoort:'vis', oesT:5, bydam:true, kosPerWerker:6,
+             help:'Bou hom BY DIE DAM. Die visser loop tot op die wal en terug.'},
+  bakoond:  {naam:'Bakoond',     ikoon:'🍞', koste:{hout:4,klip:3}, w:64, h:54,
+             werk:'kos', plekke:1, kossoort:'brood', oesT:8, brandstof:'hout', rook:true, kosPerWerker:10,
+             help:'Die bakker stook een hout per baksel. Brood is duur, maar dit tel.'},
   spens:    {naam:'Spens',        ikoon:'🧺', koste:{hout:6,klip:1},   w:70, h:58, spens:true,
              help:'Kos hou langer. Die braai vat hier.'},
   braai:    {naam:'Braaiplek',    ikoon:'🔥', koste:{hout:4,klip:2},   w:58, h:48, braai:true,
@@ -187,7 +198,7 @@ const GT={
   palissade:{naam:'Palissade',    ikoon:'🪵', koste:{hout:1},          w:40, h:40, muur:true,
              help:'’n Paal-heining. Bou ’n ry.'},
 };
-const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','spens','braai','wagtoring','palissade'];
+const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','braai','wagtoring','palissade'];
 const ST_N=5;                                   // vyf sigbare stadiums
 function stKoste(t){                            // hoeveel vragte moet aangedra word
   const k=GT[t].koste; return (k.hout||0)+(k.klip||0);
@@ -462,11 +473,118 @@ const MONDBRONNE=[];
 function monde(){let n=MENSE.length;for(const f of MONDBRONNE)n+=f()||0;return n;}
 function kosVloei(){                  // geskatte kos per dag uit werkende kosgeboue
   let v=0;
-  for(const g of GEB)if(g.klaar&&GT[g.tipe].werk==='kos')v+=g.werkers.length*16;
+  for(const g of GEB)if(g.klaar&&GT[g.tipe].werk==='kos')v+=g.werkers.length*(GT[g.tipe].kosPerWerker||16);
   return v;
 }
 function voorraad(s){return S[s]||0;}
 function bykom(s,n){S[s]=(S[s]||0)+n;persistSoon();}
+
+/* ============================== KOS-SOORTE ==============================
+   Stronghold beloon nie 'n VOLLER spens nie, maar 'n VOLLER TAFEL: twee soorte
+   kos maak die mense gelukkiger as dubbel soveel van een soort. Daarom bly
+   S.kos die enigste waarheid vir die kos-klok, die HUD en die aankoms-toets —
+   hierdie grootboek verdeel presies dieselfde eenhede in soorte. So kan die
+   yking (een tuinier ~16 kos/dag; een mens eet 4/dag op Normaal) nie deur
+   hierdie kenmerk versteur word nie: ons voeg NIKS by die totaal nie. */
+const KOSSOORT={
+  groente:{naam:'Groente',ikoon:'🥔',kleur:'#7fc95e'},
+  vleis:  {naam:'Vleis',  ikoon:'🍗',kleur:'#c0705a'},
+  brood:  {naam:'Brood',  ikoon:'🍞',kleur:'#d9ad5e'},
+  vis:    {naam:'Vis',    ikoon:'🐟',kleur:'#7fb6c9'},
+};
+const KOS_ORDE=['groente','vleis','brood','vis'];
+/* Die trap self. Klein getalle, want die humeur DRYF: +2 elke dag is binne 'n
+   week +14. Dit staan bewustelik onder die braai (+4) — die braai is een gebou,
+   drie kossoorte is drie geboue en drie werkers. */
+const KOSVAR={2:['Verskeidenheid: twee kossoorte',1],
+              3:['Verskeidenheid: drie kossoorte',2],
+              4:['Verskeidenheid: vier kossoorte',3]};
+
+if(!S.kosS||typeof S.kosS!=='object')S.kosS={};
+for(const k of KOS_ORDE)S.kosS[k]=S.kosS[k]|0;
+/* Die dag se toevoer per soort — dieselfde venster-truuk as hongerTel: 'n spens
+   wat heeltyd leeggeëet word, wys op enige oomblik toevallig 0 vis terwyl die
+   visser aanhou aandra. Dan is die tafel wél gedek. */
+let kosDagIn={},kosDagVorige={};
+
+function kosSom(){let n=0;for(const k of KOS_ORDE)n+=S.kosS[k]|0;return n;}
+function kosGrootste(){                     // die hoop waaruit dit veilig is om te vat
+  let g=null;
+  for(const k of KOS_ORDE)if(!g||(S.kosS[k]|0)>(S.kosS[g]|0))g=k;
+  return g;
+}
+function kosSync(){
+  /* S.kos BLY die waarheid. Enige pad wat kos byvoeg of aftrek sonder om 'n
+     soort te noem (’n ou stoorlêer, ’n toekomstige geskenk, ’n regstelling)
+     laat die grootboek dryf; hier trek ons hom weer reg sodat kosSom()===S.kos
+     'n invariant is wat 'n toets kan assert. */
+  let d=(S.kos|0)-kosSom();
+  if(d>0){S.kosS.groente=(S.kosS.groente|0)+d;return;}
+  while(d<0){
+    const g=kosGrootste();
+    if(!g||(S.kosS[g]|0)<=0)break;          // niks meer om te vat nie
+    S.kosS[g]--;d++;
+  }
+}
+kosSync();          // ou stoorlêers: wat reeds in die spens was, is plaaskos
+
+function kosIn(soort,n){                    // 'n VRAG kos land in die spens
+  if(!KOSSOORT[soort])soort='groente';
+  S.kosS[soort]=(S.kosS[soort]|0)+n;
+  kosDagIn[soort]=(kosDagIn[soort]||0)+n;
+  bykom('kos',n);                           // S.kos bly die HUD se getal
+}
+function kosEet(n){
+  /* Ons eet altyd uit die GROOTSTE hoop. Dit is nie net billik nie, dit hou die
+     verskeidenheid vanself aan die lewe: 'n klein hopie vis verdwyn nie in een
+     maaltyd nie, presies soos 'n huishouding wat eers die oorvloed opeet. */
+  for(let i=0;i<n;i++){
+    const g=kosGrootste();
+    if(g&&(S.kosS[g]|0)>0)S.kosS[g]--;
+  }
+  bykom('kos',-n);
+}
+function kosSoorteOpTafel(){
+  /* 'n Soort tel as daar NOU 2+ van in die spens lê, ÓF as hy vandag/gister
+     minstens 2 vragte ingebring het. Sonder die venster flikker die bonus saam
+     met elke maaltyd. */
+  const uit=[];
+  for(const k of KOS_ORDE){
+    const inDag=(kosDagIn[k]||0)+(kosDagVorige[k]||0);
+    if((S.kosS[k]|0)>=2||inDag>=2)uit.push(k);
+  }
+  return uit;
+}
+function kosVariasieRy(misgeloop,kos){
+  /* Geen verskeidenheid-bonus vir 'n honger dorp nie: as maaltye misgeloop het,
+     gee niemand om of daar vis ook was nie. Dit hou die -8 honger-ry die
+     onbetwiste swaarste faktor. */
+  if(misgeloop||kos<=0)return null;
+  const st=kosSoorteOpTafel();
+  if(st.length>=2){const r=KOSVAR[Math.min(st.length,4)];return [r[0],r[1]];}
+  if(st.length===1)return ['Net '+KOSSOORT[st[0]].naam.toLowerCase()+' op die tafel',0];
+  return null;
+}
+function damWal(x,y){
+  /* Naaste punt op die dam se WAL (droë grond), sodat 'n visserhut wat by die
+     water staan 'n kort loop gee en een ver weg 'n lang een — die plasing is
+     die besluit. */
+  const a=Math.atan2((y-DAM.y)/DAM.ry,(x-DAM.x)/DAM.rx);
+  return {x:DAM.x+Math.cos(a)*(DAM.rx+26), y:DAM.y+Math.sin(a)*(DAM.ry+20)};
+}
+function kosBlokKleure(n){                  // vir die sigbare hoop: bande per soort
+  const uit=[],tot=Math.max(1,kosSom());
+  for(const k of KOS_ORDE){
+    const q=Math.round((S.kosS[k]|0)/tot*n);
+    for(let i=0;i<q&&uit.length<n;i++)uit.push(KOSSOORT[k].kleur);
+  }
+  while(uit.length<n)uit.push(KOSSOORT.groente.kleur);
+  return uit;
+}
+
+
+
+
 
 /* ============================== TAKE ==============================
    Prioriteit: bousites eers (die dorp bou homself), dan los vragte optel,
@@ -576,8 +694,8 @@ function stapNa(m,tx,ty,dt){
 }
 function losVrag(m){
   if(!m.dra)return;
-  VRAGTE.push({x:m.x,y:m.y,soort:m.dra,geëis:0});
-  m.dra=null;
+  VRAGTE.push({x:m.x,y:m.y,soort:m.dra,kossoort:m.draS||null,geëis:0});
+  m.dra=null;m.draS=null;
 }
 function mensTik(m,dt){
   /* Skuiling-vlug oorheers alles. Take VRIES, word nooit gekanselleer nie. */
@@ -623,21 +741,23 @@ function mensTik(m,dt){
     break;
   case 'aflewer':
     if(stapNa(m,t.tx,t.ty,dt)){
-      bykom(m.dra,1);spanne(m.x,m.y-10,4,'#c9b06a');klank(300,.05,.07);
-      m.dra=null;m.sê=1.1;m.taak=null;
+      if(m.dra==='kos')kosIn(m.draS||'groente',1);else bykom(m.dra,1);
+      spanne(m.x,m.y-10,4,'#c9b06a');klank(300,.05,.07);
+      m.dra=null;m.draS=null;m.sê=1.1;m.taak=null;
     }
     break;
   case 'dra':
     if(t.fase===0){
       if(stapNa(m,t.v.x,t.v.y,dt)){
         const i=VRAGTE.indexOf(t.v);if(i>=0)VRAGTE.splice(i,1);
-        m.dra=t.v.soort;t.fase=1;
+        m.dra=t.v.soort;m.draS=t.v.kossoort||'groente';t.fase=1;
         const h=hoopVan(m.dra);t.tx=h.x+rand(-8,8);t.ty=h.y+rand(-4,10);
       }
     }else{
       if(stapNa(m,t.tx,t.ty,dt)){
-        bykom(m.dra,1);spanne(m.x,m.y-10,4,'#c9b06a');klank(300,.05,.07);
-        m.dra=null;m.sê=1.1;m.taak=null;
+        if(m.dra==='kos')kosIn(m.draS||'groente',1);else bykom(m.dra,1);
+        spanne(m.x,m.y-10,4,'#c9b06a');klank(300,.05,.07);
+        m.dra=null;m.draS=null;m.sê=1.1;m.taak=null;
       }
     }
     break;
@@ -679,19 +799,44 @@ function mensTik(m,dt){
   case 'oes': {
     const g=t.g;
     if(!g.klaar){m.taak=null;break;}
+    const GK=GT[g.tipe];
+    const soort=GK.kossoort||'groente';
+    const werkT=GK.oesT||5;
     if(t.fase===0){
-      if(t.tx===undefined){t.tx=g.x+rand(-30,30);t.ty=g.y+rand(-18,18);}
+      /* BRANDSTOF — die bakoond bak nie uit niks nie: die bakker haal eers EEN
+         hout by die hoop en dra hom sigbaar oond toe. Ons los 'n reserwe van 3
+         sodat 'n oond nooit die bousites se planke opvreet nie. */
+      if(GK.brandstof&&!t.gehaal){
+        if(voorraad(GK.brandstof)<3){m.taak=null;break;}   // te min: doen eers iets anders
+        const hb=hoopVan(GK.brandstof);
+        if(t.bx===undefined){t.bx=hb.x+rand(-8,8);t.by=hb.y+rand(-4,10);}
+        if(stapNa(m,t.bx,t.by,dt)){
+          if(voorraad(GK.brandstof)<=0){m.taak=null;break;}
+          bykom(GK.brandstof,-1);m.dra=GK.brandstof;m.draS=null;t.gehaal=1;
+        }
+        break;
+      }
+      if(t.tx===undefined){
+        const p=GK.bydam?damWal(g.x,g.y):{x:g.x+rand(-30,30),y:g.y+rand(-18,18)};
+        t.tx=p.x;t.ty=p.y;
+      }
       if(stapNa(m,t.tx,t.ty,dt)){t.fase=1;t.werk=0;}
     }else if(t.fase===1){
       t.werk+=dt;m.tred+=dt*2;
-      if(t.werk>=5){
-        m.dra='kos';t.fase=2;
+      if(GK.brandstof&&m.dra){m.dra=null;spanne(g.x,g.y-10,3,'#e0632a');}  // hout gaan in die oond
+      if(GK.rook)g.rook=T+1.2;                                             // rook terwyl hy bak
+      if(t.werk>=werkT){
+        m.dra='kos';m.draS=soort;t.fase=2;
         const h=hoopVan('kos');t.hx=h.x+rand(-8,8);t.hy=h.y+rand(-4,10);
       }
     }else{
+      /* As die klok gelui het terwyl hy gedra het, het losVrag() die vrag op die
+         grond gesit — dan mag hierdie been NIE ook nog krediteer nie (die ou
+         kode het dit gedoen en kos verdubbel). */
+      if(!m.dra){m.taak=null;break;}
       if(stapNa(m,t.hx,t.hy,dt)){
-        bykom('kos',1);spanne(m.x,m.y-10,4,'#7fc95e');klank(320,.05,.07);
-        m.dra=null;m.sê=1.1;m.taak=null;
+        kosIn(soort,1);spanne(m.x,m.y-10,4,KOSSOORT[soort].kleur);klank(320,.05,.07);
+        m.dra=null;m.draS=null;m.sê=1.1;m.taak=null;
       }
     }
     break; }
@@ -843,9 +988,14 @@ function gelukSom(rye){
   for(const k in per){const g=GLKAT[k]||GLKAT.gebeurtenis;som+=clamp(per[k],g[0],g[1]);}
   return clamp(som,-GLSTAP,GLSTAP);
 }
+/* KOS-VERSKEIDENHEID — Stronghold se tweede kos-hefboom: nie MEER kos nie, MEER SOORTE.
+   Deur die register, in kategorie 'kos', sodat dit binne die kos-klem [-10,+8] meeding
+   en nie bo-op die rantsoen-bonus stapel nie. */
+GLBRONNE.push(rye=>{const vr=kosVariasieRy(hongerTel||hongerVorige,voorraad('kos'));if(vr)rye.push([vr[0],vr[1],'kos']);});
 function dagDryf(){                       // een keer per spel-dag
   const som=gelukFaktore();
   hongerVorige=hongerTel; hongerTel=0;    // rol die honger-venster oor
+  kosDagVorige=kosDagIn; kosDagIn={};     // rol die kos-toevoer-venster oor
   S.geluk=clamp(Math.round(S.geluk+som),0,100);
   if(som<0&&S.geluk<40)paSê('Die mense kla, ' + (voorraad('kos')<=0?'daar’s niks te ete nie.':'hoor jy?'));
   persistSoon();
@@ -1275,7 +1425,7 @@ function update(dt){
       kosKlok+=dt*mnd*r.mult;
       if(kosKlok>=60){
         kosKlok-=60;                 // trek af, moenie nulstel nie — anders gaan die res verlore
-        if(voorraad('kos')>0){bykom('kos',-1);
+        if(voorraad('kos')>0){kosEet(1);
           const m=MENSE[(R()*MENSE.length)|0];
           if(m)spanne(m.x,m.y-16,2,'#7fc95e');}
         else hongerTel++;              // 'n maaltyd wat NIE gebeur het nie
@@ -1308,7 +1458,7 @@ function update(dt){
 
       const m=maakMens(1760,WH-60);
       m.taak={tipe:'stap',tx:WERF.x+rand(-70,70),ty:WERF.y+rand(60,160)};
-      MENSE.push(m);bykom('kos',-2);
+      MENSE.push(m);kosEet(2);
       plToast(m.naam+' het by die plaas aangekom.');
       klank(560,.12,.1);bemanGeboue();persistSoon();
     }
@@ -1402,6 +1552,11 @@ function update(dt){
   document.getElementById('hHout').textContent=voorraad('hout');
   document.getElementById('hKlip').textContent=voorraad('klip');
   document.getElementById('hKos').textContent=voorraad('kos');
+  {const st=kosSoorteOpTafel(), e=document.getElementById('hSoorte');
+   /* Die strokie is die enigste plek waar die speler die soorte SIEN sonder om
+      die humeur-kaart oop te maak — daarom die dowwe kleur by een soort. */
+   e.textContent=st.length?st.map(k=>KOSSOORT[k].ikoon).join(''):'—';
+   e.style.opacity=st.length>=2?'1':'.5';}
   document.getElementById('hPop').textContent=MENSE.length;
   document.getElementById('hBed').textContent='/'+bed;
   document.getElementById('hGl').textContent=S.geluk;
@@ -1434,7 +1589,7 @@ function tekenMens(m){
     ctx.restore();
   }else{ctx.fillStyle=m.klr;ctx.fillRect(-7,-17,3,8);ctx.fillRect(4,-17,3,8);}
   if(m.dra){
-    const kl=m.dra==='hout'?'#8a6f3f':m.dra==='klip'?'#9aa0a2':'#7fc95e';
+    const kl=m.dra==='hout'?'#8a6f3f':m.dra==='klip'?'#9aa0a2':((KOSSOORT[m.draS]||KOSSOORT.groente).kleur);
     ctx.fillStyle=kl;
     if(m.dra==='kos'){ctx.fillRect(-7,-34,14,9);}else ctx.fillRect(-8,-33,17,7);
     ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;
@@ -1518,6 +1673,7 @@ function tekenGebou(g){
   }
   const wh=Math.max(14,Math.round(h*.42)), ry=y+h-wh, rh=ry-y;
   const kleure={skerm:['#9aa0a2','#7d8285','#8a7658'],huis:['#a24d3a','#7a3427','#c9c0aa'],
+    hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa'],
     houthut:['#7d5b45','#5b4133','#8a7658'],klipgroef:['#8c8477','#6d675c','#9aa0a2'],
     tuin:['#4f7434','#3d5c2a','#8a6f3f'],spens:['#b9a06a','#8a7648','#c9c0aa'],
     braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2']}[g.tipe]
@@ -1579,6 +1735,30 @@ function tekenGebou(g){
     ctx.fillStyle='#ffe0a0';ctx.beginPath();
     ctx.moveTo(g.x-4,g.y-6);ctx.lineTo(g.x+fl*.6,g.y-17);ctx.lineTo(g.x+4,g.y-6);ctx.closePath();ctx.fill();
   }
+  if(g.klaar&&g.tipe==='hoenderhok'){            // 'n paar hoenders in die hok
+    for(let i=0;i<4;i++){
+      const hx=x+11+((i*17)%Math.max(10,w-26)), hy=y+h-wh-7-((i%2)*5);
+      ctx.fillStyle='#e8e2d0';ctx.fillRect(hx,hy,5,5);
+      ctx.fillStyle='#c05038';ctx.fillRect(hx+1,hy-2,3,2);
+    }
+  }
+  if(g.klaar&&g.tipe==='bakoond'){               // skoorsteen; rook terwyl hy bak
+    ctx.fillStyle='#6d675c';ctx.fillRect(x+w-18,y-12,9,16);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;ctx.strokeRect(x+w-18,y-12,9,16);
+    if(g.rook>T){
+      const t2=performance.now()/260;
+      for(let i=0;i<3;i++){
+        ctx.fillStyle='rgba(220,214,196,'+(0.30-i*0.08)+')';
+        ctx.beginPath();ctx.arc(x+w-13+Math.sin(t2+i)*4,y-16-i*11,4+i*2,0,TAU);ctx.fill();
+      }
+    }
+  }
+  if(g.klaar&&g.tipe==='visserhut'){             // nette wat droog hang
+    ctx.strokeStyle='#9aa07f';ctx.lineWidth=1.4;
+    for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(x+9+i*6,y+h-wh-2);
+      ctx.lineTo(x+9+i*6,y+h-wh+12);ctx.stroke();}
+    ctx.beginPath();ctx.moveTo(x+9,y+h-wh+5);ctx.lineTo(x+27,y+h-wh+5);ctx.stroke();
+  }
   // materiaal wat by die site lê
   if(!g.klaar){
     const oor=g.gelewer-g.verbruik;
@@ -1615,9 +1795,10 @@ function tekenHoop(soort){
   const h=HOOP[soort];const n=Math.min(voorraad(soort),15);
   if(!vis(h.x,h.y,80))return;
   const kl=soort==='hout'?['#8a6f3f','#93764a']:soort==='klip'?['#8c8477','#75705f']:['#6ea84c','#7fc95e'];
+  const kosKl=soort==='kos'?kosBlokKleure(15):null;     // die hoop wys sy soorte as bande
   for(let i=0;i<n;i++){
     const ry=Math.floor(i/5),rx=i%5;
-    ctx.fillStyle=kl[ry%2];
+    ctx.fillStyle=kosKl?kosKl[i]:kl[ry%2];
     ctx.fillRect(h.x-24+rx*10+(ry%2)*5,h.y-4-ry*7,18,7);
     ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;
     ctx.strokeRect(h.x-24+rx*10+(ry%2)*5,h.y-4-ry*7,18,7);
