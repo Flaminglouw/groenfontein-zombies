@@ -2186,10 +2186,11 @@ function tekenGebou(g){
     ctx.strokeRect(x-r,y-r,w+2*r,h+2*r);ctx.setLineDash([]);
   }
   if(G2.muur){tekenMuur(g,f);return;}   // mure teken hulself — hulle lees hul bure
-  // werpskadu
+  // werpskadu (groei saam met die dakrand, anders sweef die hoer vlakke)
+  const sk=(gVlak(g)-1)*3;
   ctx.fillStyle='rgba(16,22,11,.28)';
-  ctx.beginPath();ctx.moveTo(x+w*.16,y+h);ctx.lineTo(x+w+6,y+h);
-  ctx.lineTo(x+w+16,y+h+10);ctx.lineTo(x+w*.16+12,y+h+10);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(x+w*.16,y+h);ctx.lineTo(x+w+6+sk,y+h);
+  ctx.lineTo(x+w+16+sk,y+h+10);ctx.lineTo(x+w*.16+12,y+h+10);ctx.closePath();ctx.fill();
   /* VLAK-PITTE: 'n opgradering wat jy nie kan SIEN nie, het nie gebeur nie.
      Ons verf hulle heel laaste in die funksie (sien vlakMerk hieronder) — maar die
      palissade keer vroeg terug, so dié een kry niks. */
@@ -2200,69 +2201,112 @@ function tekenGebou(g){
     for(const [px,py] of [[x,y],[x+w,y],[x,y+h],[x+w,y+h]])ctx.fillRect(px-2,py-7,4,10);
     return;
   }
-  const wh=Math.max(14,Math.round(h*.42)), ry=y+h-wh, rh=ry-y;
+  const V=gVlak(g), saad=(g.x*0.031+g.y*0.017);
+  const wh=Math.max(14,Math.round(h*.42)), ry=y+h-wh;
+  const groei=VLAK_GEEN_DAKGROEI[g.tipe]?0:(V-1);   // die tuin se dak mag nie groei nie
+  const dakOp=groei*7, eav=4+groei*3;               // hoër nok, wyer dakrand
+  const yT=y-dakOp, rh=ry-yT;
   const kleure={skerm:['#9aa0a2','#7d8285','#8a7658'],huis:['#a24d3a','#7a3427','#c9c0aa'],
-    hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa'],
     houthut:['#7d5b45','#5b4133','#8a7658'],klipgroef:['#8c8477','#6d675c','#9aa0a2'],
     tuin:['#4f7434','#3d5c2a','#8a6f3f'],spens:['#b9a06a','#8a7648','#c9c0aa'],
-    braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2']}[g.tipe]
+    braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2'],
+    hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa']}[g.tipe]
     ||['#8a7658','#6f5c44','#c9c0aa'];
+  /* Beter materiaal: die muur word gekalk, die dak word dikker gedek. Een meng,
+     geen tweede palet om uit pas te raak nie. */
+  const muurKl=(V>=2)?mengKl(kleure[2],'#e2d8b8',V===2?.34:.55):kleure[2];
+  const dakOn =(V>=2)?mengKl(kleure[1],'#2a1a12',V===2?.12:.22):kleure[1];
+  const dakBo =(V>=2)?mengKl(kleure[0],'#2a1a12',V===2?.10:.18):kleure[0];
   // muurvlak (styg met f)
   const mh=wh*Math.min(1,f*1.6);
-  ctx.fillStyle=kleure[2];ctx.fillRect(x,y+h-mh,w,mh);
+  ctx.fillStyle=muurKl;ctx.fillRect(x,y+h-mh,w,mh);
   ctx.fillStyle='rgba(16,22,11,.22)';ctx.fillRect(x+w-Math.min(11,w*.14),y+h-mh,Math.min(11,w*.14),mh);
   // hoekpale
   if(f<1){
     ctx.fillStyle='#6f5636';
     ctx.fillRect(x-2,y+h-wh-8,5,wh+10);ctx.fillRect(x+w-3,y+h-wh-8,5,wh+10);
   }
+  const hip=Math.min(rh*.5,w*.2), yr=yT+rh*.46;
   if(f>=.6){    // dak
-    const eav=4;
-    ctx.fillStyle=kleure[1];
-    ctx.beginPath();ctx.moveTo(x-eav,ry);ctx.lineTo(x-eav,y);ctx.lineTo(x+w+eav,y);
+    ctx.fillStyle=dakOn;
+    ctx.beginPath();ctx.moveTo(x-eav,ry);ctx.lineTo(x-eav,yT);ctx.lineTo(x+w+eav,yT);
     ctx.lineTo(x+w+eav,ry);ctx.closePath();ctx.fill();
-    ctx.fillStyle=kleure[0];
-    const hip=Math.min(rh*.5,w*.2), yr=y+rh*.46;
+    ctx.fillStyle=dakBo;
     ctx.beginPath();ctx.moveTo(x-eav,ry);ctx.lineTo(x+hip,yr);ctx.lineTo(x+w-hip,yr);
     ctx.lineTo(x+w+eav,ry);ctx.closePath();ctx.fill();
     ctx.strokeStyle='rgba(16,22,11,.18)';ctx.lineWidth=2;
     for(let i=1;i<Math.max(3,w/14);i++){const t2=i/Math.max(3,w/14);
-      ctx.beginPath();ctx.moveTo(x-eav+(w+eav*2)*t2,y);ctx.lineTo(x-eav+(w+eav*2)*t2,ry);ctx.stroke();}
+      ctx.beginPath();ctx.moveTo(x-eav+(w+eav*2)*t2,yT);ctx.lineTo(x-eav+(w+eav*2)*t2,ry);ctx.stroke();}
+    if(V>=2){   // dekriet-lae wat oormekaar lê: 'n dikker, beter dak
+      ctx.strokeStyle='rgba(16,22,11,.26)';ctx.lineWidth=3;
+      for(let i=1;i<=V;i++){const by=yT+rh*(i/(V+1));
+        ctx.beginPath();ctx.moveTo(x-eav+1,by);ctx.lineTo(x+w+eav-1,by);ctx.stroke();}
+    }
     ctx.strokeStyle='rgba(255,244,214,.3)';ctx.lineWidth=3;
     ctx.beginPath();ctx.moveTo(x+hip,yr);ctx.lineTo(x+w-hip,yr);ctx.stroke();
+    if(V>=3){   // nokplank
+      ctx.fillStyle='#5d4a2c';ctx.fillRect(x+hip-3,yr-4.5,w-hip*2+6,5);
+      ctx.strokeStyle='rgba(14,20,10,.7)';ctx.lineWidth=2;
+      ctx.strokeRect(x+hip-3,yr-4.5,w-hip*2+6,5);
+    }
     ctx.fillStyle='rgba(16,22,11,.28)';ctx.fillRect(x,ry,w,5);
     ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=3;
-    ctx.strokeRect(x-eav,y,w+eav*2,rh);
+    ctx.strokeRect(x-eav,yT,w+eav*2,rh);
+    if(V>=2&&VLAK_SKOORSTEEN[g.tipe])            // 'n vuur binne kry 'n skoorsteen
+      tekenSkoorsteen(x+w*(g.tipe==='huis'?.80:.72),yr+2,V>=3?13:11,(V>=3?30:22)+rh*.4,g.klaar,saad);
   }
+  const fh=(V>=2?(V===2?7:10):0), bo=y+h-fh;     // vloerlyn bo-op die fondament
   if(g.klaar){
     ctx.fillStyle='#2b2015';                                  // deur
-    ctx.fillRect(x+w*.62,y+h-wh*.66,Math.min(15,w*.18),wh*.66);
+    ctx.fillRect(x+w*.62,bo-wh*.66,Math.min(15,w*.18),wh*.66);
     ctx.strokeStyle='rgba(14,20,10,.7)';ctx.lineWidth=2;
-    ctx.strokeRect(x+w*.62,y+h-wh*.66,Math.min(15,w*.18),wh*.66);
+    ctx.strokeRect(x+w*.62,bo-wh*.66,Math.min(15,w*.18),wh*.66);
     if(G2.bed){                                               // vensters
-      for(let i=0;i<2;i++){
+      const nv=(V>=3&&w>=76)?3:2;
+      for(let i=0;i<nv;i++){
         const vx=x+9+i*20;
-        ctx.fillStyle='#23303c';ctx.fillRect(vx,y+h-wh*.72,13,Math.max(6,wh*.34));
-        ctx.fillStyle='#4d6a82';ctx.fillRect(vx+1.5,y+h-wh*.72+1.5,10,Math.max(3,wh*.34-3));
+        ctx.fillStyle='#23303c';ctx.fillRect(vx,bo-wh*.72,13,Math.max(6,wh*.34));
+        ctx.fillStyle='#4d6a82';ctx.fillRect(vx+1.5,bo-wh*.72+1.5,10,Math.max(3,wh*.34-3));
+        if(V>=2){                                             // luike by 'n beter huis
+          ctx.strokeStyle='rgba(14,20,10,.7)';ctx.lineWidth=2;
+          ctx.strokeRect(vx,bo-wh*.72,13,Math.max(6,wh*.34));
+        }
       }
     }
   }
   ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=3;
   ctx.strokeRect(x,y+h-mh,w,mh);
+  if(f>.02)tekenFondament(x,y,w,h,V,saad);       // die klipfondament kom eerste op
   // die tuin kry rye; die braai 'n vuur; die toring 'n lantern
   if(g.klaar&&g.tipe==='tuin'){
+    const rye=(V===1?4:V===2?6:8);               // meer rye = 'n groter land
     ctx.strokeStyle='#3a2c1a';ctx.lineWidth=4;
-    for(let i=0;i<4;i++){ctx.beginPath();ctx.moveTo(x+6,y+12+i*((h-20)/3));
-      ctx.lineTo(x+w-6,y+12+i*((h-20)/3));ctx.stroke();}
+    for(let i=0;i<rye;i++){const ly=y+12+i*((h-20)/(rye-1));
+      ctx.beginPath();ctx.moveTo(x+6,ly);ctx.lineTo(x+w-6,ly);ctx.stroke();}
     ctx.fillStyle='#7fc95e';
-    for(let i=0;i<16;i++)ctx.fillRect(x+8+(i%8)*((w-16)/8),y+10+((i/8)|0)*((h-18)/2),4,6);
+    const pR=(V===1?2:V===2?3:4), pK=(V===1?8:V===2?9:10);
+    for(let i=0;i<pR*pK;i++)
+      ctx.fillRect(x+8+(i%pK)*((w-16)/pK),y+10+((i/pK)|0)*((h-18)/pR),4,6);
   }
   if(g.klaar&&g.tipe==='braai'&&BRAAI_AAN){
+    const vs=1+(V-1)*.34;                        // 'n beter braai brand groter
     const fl=Math.sin(performance.now()/90)*2;
     ctx.fillStyle='#e0632a';ctx.beginPath();
-    ctx.moveTo(g.x-8,g.y-6);ctx.lineTo(g.x+fl,g.y-26);ctx.lineTo(g.x+8,g.y-6);ctx.closePath();ctx.fill();
+    ctx.moveTo(g.x-8*vs,g.y-6);ctx.lineTo(g.x+fl,g.y-26*vs);ctx.lineTo(g.x+8*vs,g.y-6);ctx.closePath();ctx.fill();
     ctx.fillStyle='#ffe0a0';ctx.beginPath();
-    ctx.moveTo(g.x-4,g.y-6);ctx.lineTo(g.x+fl*.6,g.y-17);ctx.lineTo(g.x+4,g.y-6);ctx.closePath();ctx.fill();
+    ctx.moveTo(g.x-4*vs,g.y-6);ctx.lineTo(g.x+fl*.6,g.y-17*vs);ctx.lineTo(g.x+4*vs,g.y-6);ctx.closePath();ctx.fill();
+  }
+  if(V>=2&&f>=.6)tekenVlakEkstras(g,V,x,y,w,h,wh,bo,yT,ry,yr,hip,kleure);
+  /* Die vlak-merk heel bo: vlak 2 'n goue gewelpen, vlak 3 'n wapperende banier.
+     Nooit albei nie — een merk per gebou, anders lees dit as ruis. */
+  if(f>=.6&&g.tipe!=='tuin'){
+    if(V===2&&g.tipe!=='wagtoring')tekenGewelpen(x+hip+3,yr-1);
+    else if(V>=3){
+      // waar die skoorsteen staan, skuif die banier na die ander nokpunt
+      const bx=(g.tipe==='wagtoring')?x+w*.5+10:(VLAK_SKOORSTEEN[g.tipe]?x+hip+3:x+w-hip-19);
+      const by=(g.tipe==='wagtoring')?yT-34-16:yr-2;
+      tekenBanier(bx,by,'#c05038',saad);
+    }
   }
   if(g.klaar&&g.tipe==='hoenderhok'){            // 'n paar hoenders in die hok
     for(let i=0;i<4;i++){
@@ -2297,13 +2341,284 @@ function tekenGebou(g){
     }
     // vorderingbalk
     const p=(g.stadium+ (g.gelewer>=sDrempel(g,g.stadium)?g.werk/2.0:0))/ST_N;
-    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(x,y-13,w,7);
+    const yT2=y-(VLAK_GEEN_DAKGROEI[g.tipe]?0:(gVlak(g)-1))*7;   // bo die (hoer) dak
+    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(x,yT2-13,w,7);
     /* 'n Opgradering kry 'n GOUE balk sodat dit nie soos 'n nuwe bousite lyk nie —
        die speler moet kan sien sy gebou word aangebou, nie vervang nie. */
     ctx.fillStyle=g.opgradeer?'#e8c96a':'#e0b64f';
-    ctx.fillRect(x+1,y-12,(w-2)*clamp(p,0,1),5);
+    ctx.fillRect(x+1,yT2-12,(w-2)*clamp(p,0,1),5);
   }
-  vlakMerk(g,x,y,w,h);
+  /* Die vlak word nou in die SILHOEET gedra (gewelpen/banier/fondament/skoorsteen) —
+     die ou goue pitte is weg: een merk per gebou, anders lees dit as ruis. */
+}
+
+const VLAK_N=3;
+/* gVlak() bestaan reeds (klem op VLAKKE[t].length) — die agent se weergawe is weggelaat. */
+/* Die tuin is 'n LAND en die palissade 'n heining: hulle dak mag nie groei nie. */
+const VLAK_GEEN_DAKGROEI={tuin:1,palissade:1};
+/* Waar 'n vuur binne brand kom 'n skoorsteen met rook by op vlak 2. */
+const VLAK_SKOORSTEEN={huis:1,spens:1,braai:1};
+/* Watter kant toe 'n werkplek se aanbousel groei (-1 links, +1 regs). */
+const VLAK_UITBOU={houthut:-1,klipgroef:1,spens:-1};
+
+/* Hex-meng: 'beter materiaal' sonder om 'n tweede palet te moet onderhou. */
+function mengKl(a,b,t){
+  const pa=parseInt(a.slice(1),16), pb=parseInt(b.slice(1),16);
+  const r=Math.round((pa>>16&255)+((pb>>16&255)-(pa>>16&255))*t);
+  const gg=Math.round((pa>>8&255)+((pb>>8&255)-(pa>>8&255))*t);
+  const bb=Math.round((pa&255)+((pb&255)-(pa&255))*t);
+  return '#'+((1<<24)|(r<<16)|(gg<<8)|bb).toString(16).slice(1);
+}
+
+/* Klipfondament: die duidelikste "dit is opgegradeer"-teken by uitgezoomde
+   kamera, want dit verander die gebou se onderste rand se KLEUR oor sy hele wydte. */
+function tekenFondament(x,y,w,h,V,saad){
+  if(V<2)return 0;
+  const ph=(V===2?7:10);
+  ctx.fillStyle='#8c8477';ctx.fillRect(x-3,y+h-ph,w+6,ph);
+  ctx.fillStyle='#75705f';
+  const n=Math.max(3,Math.round(w/14)), bw=(w+6)/n;
+  for(let i=0;i<n;i++){
+    const bx=x-3+i*bw;
+    if((i+(saad|0))%2===0)ctx.fillRect(bx+1.5,y+h-ph+1.5,bw-3,ph*.38);
+    else ctx.fillRect(bx+1.5,y+h-ph*.48,bw-3,ph*.34);
+  }
+  ctx.fillStyle='rgba(255,244,214,.20)';ctx.fillRect(x-3,y+h-ph,w+6,2);
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.4;
+  ctx.strokeRect(x-3,y+h-ph,w+6,ph);
+  return ph;
+}
+
+/* Skoorsteen + drie rookpofies: bewys dat daar binne gekook word. */
+function tekenSkoorsteen(px,onder,bw,bh,rook,saad){
+  ctx.fillStyle='#8c8477';ctx.fillRect(px-bw/2,onder-bh,bw,bh);
+  ctx.fillStyle='#75705f';
+  for(let i=0;i<3;i++)ctx.fillRect(px-bw/2+1.5+(i%2)*2.5,onder-bh+4+i*5,bw-5,3);
+  ctx.fillStyle='#a09585';ctx.fillRect(px-bw/2-3,onder-bh-5,bw+6,5);
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.4;
+  ctx.strokeRect(px-bw/2,onder-bh,bw,bh);
+  ctx.strokeRect(px-bw/2-3,onder-bh-5,bw+6,5);
+  if(!rook)return;
+  const t=performance.now()/1000;
+  for(let i=0;i<3;i++){
+    const p=(t*.4+i/3+saad*.13)%1;
+    ctx.fillStyle='rgba(226,220,200,'+(0.34*(1-p)).toFixed(3)+')';
+    ctx.beginPath();ctx.arc(px+Math.sin(p*3.4+i)*5,onder-bh-10-p*28,3+p*7,0,TAU);ctx.fill();
+  }
+}
+
+/* Aanbousel teen die sy: die werkplek het uitgebrei en jy sien dit van ver af.
+   Dit steek BUITE die voetstuk uit — net verf, geen botsing. */
+function tekenUitbouing(x,y,w,h,wh,V,kleure,kant){
+  const uw=Math.round(w*(V>=3?.34:.23)), uh=Math.round(wh*.80);
+  const ux=(kant<0)? x-uw+3 : x+w-3, uy=y+h-uh;
+  ctx.fillStyle=kleure[2];ctx.fillRect(ux,uy,uw,uh);
+  ctx.fillStyle='rgba(16,22,11,.24)';ctx.fillRect(ux,uy,uw,uh*.26);
+  const bi=(kant<0)?x+3:x+w-3, bu=(kant<0)?ux-5:ux+uw+5;   // dak hel na buite af
+  ctx.fillStyle=kleure[1];
+  ctx.beginPath();ctx.moveTo(bi,uy-13);ctx.lineTo(bu,uy+2);
+  ctx.lineTo(bu,uy+9);ctx.lineTo(bi,uy-6);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.4;
+  ctx.strokeRect(ux,uy,uw,uh);
+  ctx.beginPath();ctx.moveTo(bi,uy-13);ctx.lineTo(bu,uy+2);
+  ctx.lineTo(bu,uy+9);ctx.lineTo(bi,uy-6);ctx.closePath();ctx.stroke();
+}
+
+/* Die banier van vlak 3: die enigste ding wat bo die dak uitsteek en wapper,
+   dus die een merk wat jy nog uitmaak as die kamera heeltemal uitgezoem is. */
+function tekenBanier(px,py,kl,saad){
+  const t=performance.now()/380+saad;
+  ctx.strokeStyle='#4a3a22';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(px,py+3);ctx.lineTo(px,py-24);ctx.stroke();
+  const w1=Math.sin(t)*2.2, w2=Math.sin(t+1.1)*2.4;
+  ctx.beginPath();ctx.moveTo(px+1.5,py-23);ctx.lineTo(px+18+w1,py-20+w2);
+  ctx.lineTo(px+18+w1,py-12+w2);ctx.lineTo(px+1.5,py-8);ctx.closePath();
+  ctx.fillStyle=kl;ctx.fill();
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle='rgba(255,244,214,.30)';ctx.fillRect(px+1.5,py-23,3.5,15);
+  ctx.fillStyle='#e0b64f';ctx.beginPath();ctx.arc(px,py-25.5,2.8,0,TAU);ctx.fill();
+}
+
+/* Vlak 2 se stil merk: een goue gewelpen op die nok. Vlak 3 vervang hom met
+   die banier — die twee mag nooit saam verskyn nie, anders lees dit as ruis. */
+function tekenGewelpen(px,py){
+  ctx.fillStyle='#e0b64f';
+  ctx.beginPath();ctx.moveTo(px,py-10);ctx.lineTo(px+5,py-5);
+  ctx.lineTo(px,py);ctx.lineTo(px-5,py-5);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=1.8;ctx.stroke();
+}
+
+/* Per-tipe vlak-ekstras. Word NA die kern-verf geroep sodat alles bo-op lê.
+   bo = die vloerlyn (bokant van die fondament), yT = dakpunt, ry = dakrand. */
+function tekenVlakEkstras(g,V,x,y,w,h,wh,bo,yT,ry,yr,hip,kleure){
+  const saad=(g.x*0.031+g.y*0.017);
+  // die werkplek se aanbousel kom eerste: alles anders lê bo-op hom
+  if(VLAK_UITBOU[g.tipe])tekenUitbouing(x,y,w,h,wh,V,kleure,VLAK_UITBOU[g.tipe]);
+  switch(g.tipe){
+  case 'skerm':
+    if(V>=2){                       // afdak op twee pale: die kamp het skaduwee
+      ctx.strokeStyle='#6f5636';ctx.lineWidth=3;
+      ctx.beginPath();ctx.moveTo(x-13,bo);ctx.lineTo(x-13,ry+4);
+      ctx.moveTo(x+w+13,bo);ctx.lineTo(x+w+13,ry+4);ctx.stroke();
+      ctx.fillStyle=mengKl(kleure[0],'#d8cdae',.35);
+      ctx.beginPath();ctx.moveTo(x-15,ry+2);ctx.lineTo(x+w+15,ry+2);
+      ctx.lineTo(x+w+11,ry+9);ctx.lineTo(x-11,ry+9);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.2;ctx.stroke();
+    }
+    if(V>=3){                       // 'n tweede tentjie: die kamp het gegroei
+      ctx.fillStyle=kleure[1];
+      ctx.beginPath();ctx.moveTo(x-24,bo);ctx.lineTo(x-11,bo-24);
+      ctx.lineTo(x+2,bo);ctx.closePath();ctx.fill();
+      ctx.fillStyle=kleure[0];
+      ctx.beginPath();ctx.moveTo(x-11,bo-24);ctx.lineTo(x+2,bo);
+      ctx.lineTo(x-4,bo);ctx.closePath();ctx.fill();
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.4;
+      ctx.beginPath();ctx.moveTo(x-24,bo);ctx.lineTo(x-11,bo-24);
+      ctx.lineTo(x+2,bo);ctx.closePath();ctx.stroke();
+    }
+    break;
+  case 'huis':
+    if(V>=2){                       // stoep: twee pale en 'n plank onder die dakrand
+      ctx.fillStyle='#6f5636';
+      ctx.fillRect(x+w*.50,ry+2,4,bo-ry-2);ctx.fillRect(x+w-8,ry+2,4,bo-ry-2);
+      ctx.fillStyle='#8a7658';ctx.fillRect(x+w*.46,bo-3,w*.52,4);
+      ctx.strokeStyle='rgba(14,20,10,.62)';ctx.lineWidth=2;
+      ctx.strokeRect(x+w*.46,bo-3,w*.52,4);
+    }
+    if(V>=3){                       // dakvenster: die solder is uitgebou
+      const dx=x+w*.55, dy=yT+(ry-yT)*.42;
+      ctx.fillStyle=kleure[1];
+      ctx.beginPath();ctx.moveTo(dx-11,dy+12);ctx.lineTo(dx,dy-6);
+      ctx.lineTo(dx+11,dy+12);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#23303c';ctx.fillRect(dx-5,dy+2,10,10);
+      ctx.fillStyle='#4d6a82';ctx.fillRect(dx-3.5,dy+3.5,7,7);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.2;
+      ctx.beginPath();ctx.moveTo(dx-11,dy+12);ctx.lineTo(dx,dy-6);
+      ctx.lineTo(dx+11,dy+12);ctx.closePath();ctx.stroke();
+    }
+    break;
+  case 'houthut':
+    if(V>=2){                       // die houtstapel teen die muur — sigbare voorraad
+      const ry2=(V>=3?3:2);
+      for(let r2=0;r2<ry2;r2++)for(let i=0;i<3;i++){
+        ctx.fillStyle=(i%2)?'#93764a':'#8a6f3f';
+        ctx.fillRect(x+w-26+i*9,bo-8-r2*8,8,7);
+        ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;
+        ctx.strokeRect(x+w-26+i*9,bo-8-r2*8,8,7);
+      }
+    }
+    if(V>=3){                       // saagbok: die hut saag nou self planke
+      ctx.strokeStyle='#6f5636';ctx.lineWidth=3.2;
+      ctx.beginPath();
+      ctx.moveTo(x+6,bo);ctx.lineTo(x+15,bo-13);ctx.moveTo(x+24,bo);ctx.lineTo(x+15,bo-13);
+      ctx.moveTo(x+4,bo-13);ctx.lineTo(x+26,bo-13);ctx.stroke();
+    }
+    break;
+  case 'klipgroef':
+    if(V>=2){                       // gekapte blokke, netjies gestapel
+      for(let i=0;i<(V>=3?5:3);i++){
+        ctx.fillStyle=(i%2)?'#8c8477':'#9aa0a2';
+        ctx.fillRect(x+4+(i%3)*13,bo-9-((i/3)|0)*9,12,8);
+        ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;
+        ctx.strokeRect(x+4+(i%3)*13,bo-9-((i/3)|0)*9,12,8);
+      }
+    }
+    if(V>=3){                       // hysbalk met tou en klip: die groef het 'n katrol
+      ctx.fillStyle='#6f5636';ctx.fillRect(x+w-6,yr+4,30,5);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2;
+      ctx.strokeRect(x+w-6,yr+4,30,5);
+      const sw=Math.sin(performance.now()/900+saad)*3;
+      ctx.strokeStyle='#c9b06a';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(x+w+21,yr+9);ctx.lineTo(x+w+21+sw,yr+30);ctx.stroke();
+      ctx.fillStyle='#8c8477';ctx.fillRect(x+w+15+sw,yr+30,12,10);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;ctx.strokeRect(x+w+15+sw,yr+30,12,10);
+    }
+    break;
+  case 'tuin':
+    if(!g.klaar)break;              // 'n leë land met 'n heining lees verkeerd
+    if(V>=2){                       // die watervat: die land word nou natgelei
+      ctx.fillStyle='#7d5b45';ctx.fillRect(x-11,y+h-20,15,18);
+      ctx.fillStyle='#5b4133';ctx.fillRect(x-11,y+h-20,15,3);
+      ctx.fillStyle='#4d6a82';ctx.fillRect(x-9.5,y+h-19,12,3);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.2;
+      ctx.strokeRect(x-11,y+h-20,15,18);
+    }
+    if(V>=3){                       // heining + voëlverskrikker: die land is verdedig
+      ctx.strokeStyle='#6f5636';ctx.lineWidth=2.6;
+      ctx.strokeRect(x-4,y-4,w+8,h+8);
+      for(let i=0;i<6;i++){const px=x-4+i*((w+8)/5);
+        ctx.beginPath();ctx.moveTo(px,y-8);ctx.lineTo(px,y+h+8);ctx.stroke();}
+      const sw=Math.sin(performance.now()/700+saad)*.10;
+      ctx.save();ctx.translate(x+w*.5,y+h*.42);ctx.rotate(sw);
+      ctx.strokeStyle='#6f5636';ctx.lineWidth=3.4;
+      ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-26);ctx.moveTo(-11,-19);ctx.lineTo(11,-19);ctx.stroke();
+      ctx.fillStyle='#c9b06a';ctx.beginPath();ctx.arc(0,-30,5.5,0,TAU);ctx.fill();
+      ctx.fillStyle='#8a6f3f';ctx.fillRect(-9,-35,18,4);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=1.8;
+      ctx.beginPath();ctx.arc(0,-30,5.5,0,TAU);ctx.stroke();
+      ctx.restore();
+    }
+    break;
+  case 'spens':
+    if(V>=2){                       // sakke buite: die spens loop oor
+      for(let i=0;i<(V>=3?3:2);i++){
+        ctx.fillStyle='#c9b06a';ctx.fillRect(x+w+4+i*3,bo-13-i*2,11,13);
+        ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=1.8;
+        ctx.strokeRect(x+w+4+i*3,bo-13-i*2,11,13);
+      }
+    }
+    if(V>=3){                       // biltong onder die afdak: kos wat hou
+      ctx.strokeStyle='#4a3a22';ctx.lineWidth=2.6;
+      ctx.beginPath();ctx.moveTo(x+6,ry+7);ctx.lineTo(x+w-6,ry+7);ctx.stroke();
+      for(let i=0;i<5;i++){
+        ctx.fillStyle=(i%2)?'#7a3427':'#a24d3a';
+        ctx.fillRect(x+11+i*((w-22)/4)-2.5,ry+7,5,12);
+      }
+    }
+    break;
+  case 'braai':
+    if(V>=2){                       // klipring om die vuur: nie meer 'n veldvuurtjie nie
+      ctx.strokeStyle='#8c8477';ctx.lineWidth=5;
+      ctx.beginPath();ctx.ellipse(g.x,g.y-2,17,7,0,0,TAU);ctx.stroke();
+      ctx.strokeStyle='rgba(14,20,10,.6)';ctx.lineWidth=1.8;
+      ctx.beginPath();ctx.ellipse(g.x,g.y-2,19.5,9,0,0,TAU);ctx.stroke();
+    }
+    if(V>=3){                       // draaispit: die hele werf eet hier
+      ctx.strokeStyle='#4a3a22';ctx.lineWidth=3.2;
+      ctx.beginPath();
+      ctx.moveTo(g.x-21,g.y-1);ctx.lineTo(g.x-17,g.y-19);
+      ctx.moveTo(g.x+21,g.y-1);ctx.lineTo(g.x+17,g.y-19);
+      ctx.moveTo(g.x-19,g.y-19);ctx.lineTo(g.x+19,g.y-19);ctx.stroke();
+      const dr=Math.sin(performance.now()/500+saad)*1.6;
+      ctx.fillStyle='#7a3427';ctx.fillRect(g.x-8,g.y-24+dr,16,9);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=1.8;
+      ctx.strokeRect(g.x-8,g.y-24+dr,16,9);
+    }
+    break;
+  case 'wagtoring':
+    if(V>=2){                       // 'n verdieping BO die dak: die toring word hoër
+      const ph=(V>=3?34:26), px=x+w*.10, pw=w*.80, py=yT-ph;
+      ctx.fillStyle=mengKl(kleure[2],'#e2d8b8',.25);ctx.fillRect(px,py,pw,ph);
+      ctx.fillStyle='rgba(16,22,11,.26)';ctx.fillRect(px+pw-8,py,8,ph);
+      ctx.fillStyle='#4a3a22';                         // relings
+      for(let i=0;i<4;i++)ctx.fillRect(px+3+i*((pw-6)/3.4),py+2,3.5,ph*.45);
+      ctx.fillStyle='#5d4a2c';ctx.fillRect(px-4,py-3,pw+8,5);
+      ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.6;
+      ctx.strokeRect(px,py,pw,ph);ctx.strokeRect(px-4,py-3,pw+8,5);
+      const gloed=0.55+Math.sin(performance.now()/620+saad)*0.18;   // die lantern
+      ctx.fillStyle='rgba(224,182,79,'+gloed.toFixed(3)+')';
+      ctx.beginPath();ctx.arc(x+w*.5,py+ph*.62,(V>=3?8:6),0,TAU);ctx.fill();
+      ctx.fillStyle='#ffe9b4';
+      ctx.beginPath();ctx.arc(x+w*.5,py+ph*.62,(V>=3?4:3),0,TAU);ctx.fill();
+      if(V>=3){                     // 'n kappie oor die wagpos
+        ctx.fillStyle=kleure[1];
+        ctx.beginPath();ctx.moveTo(px-8,py-3);ctx.lineTo(x+w*.5,py-19);
+        ctx.lineTo(px+pw+8,py-3);ctx.closePath();ctx.fill();
+        ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2.6;ctx.stroke();
+      }
+    }
+    break;
+  }
 }
 
 /* VLAK-PITTE — klein goue stippels op die dak se lyn. Leesbaar by lae zoem omdat
