@@ -138,10 +138,22 @@ try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object'&&
 let persistT=0;
 function persist(){
   try{
-    /* vlak en opgradeer word AGTERAAN aangelas: 'n ou stoor gee undefined en val
-       skoon terug na vlak 1, sonder 'n migrasie-stap. */
-    S.geb=GEB.map(g=>[g.tipe,Math.round(g.x),Math.round(g.y),g.klaar?1:0,g.stadium,g.gelewer,g.verbruik,
-                      g.vlak||1,g.opgradeer||0,g.gelewerH||0,g.gelewerK||0]);
+    /* BENOEMDE REKORD, NIE 'n POSISIONELE SKIKKING NIE.
+       Die 20-agent-hersiening het gewys dat drie kenmerke elk indeks 7 vir 'n ANDER ding
+       opeis (vlak, muur-hp, hop). Dit is nie 'n samesmeltingskonflik nie — dit is stille
+       datavernietiging: 'n herlaaide muur word vlak 90 en niemand sien 'n fout nie.
+       Met benoemde sleutels kan twee kenmerke nie meer dieselfde sleuf gryp nie, en 'n
+       onbekende sleutel word eenvoudig geignoreer eerder as verkeerd gelees. */
+    S.geb=GEB.map(g=>{
+      const r={t:g.tipe,x:Math.round(g.x),y:Math.round(g.y),k:g.klaar?1:0,
+               st:g.stadium,gl:g.gelewer,vb:g.verbruik};
+      if(g.vlak>1)r.vlak=g.vlak;                    // laat verstek-waardes weg: kleiner stoor
+      if(g.opgradeer)r.opg=g.opgradeer;
+      if(g.gelewerH)r.glH=g.gelewerH;
+      if(g.gelewerK)r.glK=g.gelewerK;
+      for(const f of GEBVELDE)f(g,r);               // kenmerke haak HIER in, nie by 'n indeks nie
+      return r;
+    });
     S.mense=MENSE.length;
     localStorage.setItem(GF_KEY,JSON.stringify(S));
   }catch(e){}
@@ -442,6 +454,10 @@ function hoopVan(soort){
    en diere kan later `MONDBRONNE.push(fn)` doen sonder om die kos-klok aan te raak.
    Sonder hierdie vorm herskryf elke kenmerk dieselfde twee reels met sy eie definisie
    van 'n mond, en die laaste een wat land, wen stil-stil. */
+/* Kenmerke haak hier in om hul eie velde te stoor/laai. Nooit 'n indeks nie, nooit 'n
+   redigering van persist() nie: GEBVELDE.push((g,r)=>{if(g.hp!=null)r.hp=g.hp;}) en
+   GEBLAAI.push((g,o)=>{g.hp=o.hp;}). Twee kenmerke kan dan nie meer bots nie. */
+const GEBVELDE=[], GEBLAAI=[];
 const MONDBRONNE=[];
 function monde(){let n=MENSE.length;for(const f of MONDBRONNE)n+=f()||0;return n;}
 function kosVloei(){                  // geskatte kos per dag uit werkende kosgeboue
@@ -1754,13 +1770,20 @@ function raam(now){
 bakTerrein();kamBegin();
 // herstel gestoorde geboue
 for(const rec of (S.geb||[])){
-  const [tipe,x,y,klaar,stadium,gelewer,verbruik,vlak,opgradeer,gelH,gelK]=rec;
+  /* Lees ALBEI vorms: die ou posisionele skikking EN die nuwe benoemde rekord. 'n Speler
+     wat vanoggend gespeel het, moet vanaand nog sy plaas he. */
+  const o=Array.isArray(rec)
+    ? {t:rec[0],x:rec[1],y:rec[2],k:rec[3],st:rec[4],gl:rec[5],vb:rec[6],
+       vlak:rec[7],opg:rec[8],glH:rec[9],glK:rec[10]}
+    : (rec||{});
+  const tipe=o.t;
   if(!GT[tipe])continue;
-  const g=nuweGebou(tipe,x,y);
-  g.klaar=!!klaar;g.stadium=stadium||0;g.gelewer=gelewer||0;g.verbruik=verbruik||0;
-  g.vlak=Math.min(vlak||1,maxVlak(tipe));      // klem, ingeval 'n tabel later krimp
-  g.opgradeer=opgradeer||0;
-  g.gelewerH=gelH||0;g.gelewerK=gelK||0;
+  const g=nuweGebou(tipe,o.x,o.y);
+  g.klaar=!!o.k;g.stadium=o.st||0;g.gelewer=o.gl||0;g.verbruik=o.vb||0;
+  g.vlak=Math.min(o.vlak||1,maxVlak(tipe));    // klem, ingeval 'n tabel later krimp
+  g.opgradeer=o.opg||0;
+  g.gelewerH=o.glH||0;g.gelewerK=o.glK||0;
+  for(const f of GEBLAAI)f(g,o);               // kenmerke lees hul eie sleutels terug
   GEB.push(g);
 }
 // die mense
