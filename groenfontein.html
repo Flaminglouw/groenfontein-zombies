@@ -178,6 +178,7 @@ function persist(){
       return r;
     });
     S.mense=MENSE.length;
+    S.neste=NESTE.map(nesRy);
     localStorage.setItem(GF_KEY,JSON.stringify(S));
   }catch(e){}
 }
@@ -762,6 +763,7 @@ function mensTik(m,dt){
       m.taak=null;
     }
     if(m.taak&&m.taak.tipe==='bou'&&m.taak.site){m.taak.site.bouer=null;m.taak=null;}
+    if(m.taak&&m.taak.tipe==='storm')m.taak=null;   // die klok roep OOK die kommando terug
     if(m.stoepPlek===undefined)m.stoepPlek=rand(-52,52);
     stapNa(m,STOEP.x+m.stoepPlek,STOEP.y+rand(-2,2),dt);
     return;
@@ -968,6 +970,24 @@ function mensTik(m,dt){
     if(t.tx===undefined){t.tx=g.x+rand(-10,10);t.ty=g.y+GT[g.tipe].h/2+6;}
     if(stapNa(m,t.tx,t.ty,dt))meldAan(m,g,o);
     break; }
+  case 'storm': {
+    /* DIE UITMARS. Dieselfde 0.9s-ritme as kap, sodat die byl-animasie in tekenMens
+       presies pas — een houe is een lewe uit die nes uit. */
+    const n=t.nes;
+    if(!n||n.dood){m.taak=null;break;}
+    if(t.fase===0){
+      if(stapNa(m,t.tx,t.ty,dt)){t.fase=1;m.slaan=0;}
+      else if(dist2(m.x,m.y,n.x,n.y)<58*58){t.fase=1;m.slaan=0;}   // gleuf agter 'n boom: slaan tog
+    }else{
+      if(dist2(m.x,m.y,n.x,n.y)>76*76){stapNa(m,t.tx,t.ty,dt);break;}
+      m.rig=n.x>m.x?1:-1;
+      m.slaan+=dt;
+      if(m.slaan>=0.9){
+        m.slaan=0;n.hp-=1;n.skud=0.12;
+        spanne(n.x+rand(-14,14),n.y-10,3,'#6f9a3a');klank(150+R()*50,.06,.1);
+      }
+    }
+    break; }
   }
 }
 /* Werkplekke neem mense in diens: die naaste werklose kry die pos. */
@@ -1082,6 +1102,7 @@ function dagDryf(){                       // een keer per spel-dag
   const som=gelukFaktore();
   hongerVorige=hongerTel; hongerTel=0;    // rol die honger-venster oor
   kosDagVorige=kosDagIn; kosDagIn={};     // rol die kos-toevoer-venster oor
+  nesDagRol();                            // roem verbleik, rou bedaar, wonde genees
   S.geluk=clamp(Math.round(S.geluk+som),0,100);
   if(som<0&&S.geluk<40)paSê('Die mense kla, ' + (voorraad('kos')<=0?'daar’s niks te ete nie.':'hoor jy?'));
   persistSoon();
@@ -1553,6 +1574,7 @@ function gebOnder(wx,wy){
 }
 function kiesGebou(g){
   GEKIES=g;
+  if(NESKIES){NESKIES=null;nesKnoppe(false);}   // die twee deel een kaart
   bouBalk();   // die kaserne se krygsry leef in die balk, nie in die gebou-kaart nie
   const kaart=document.getElementById('gebkaart');
   if(!g){kaart.style.display='none';return;}
@@ -1607,6 +1629,8 @@ function tik(wx,wy){
     }
   }
   if(MODUS!=='merk'){
+    const n=nesOnder(wx,wy);                   // neste staan ver van geboue af
+    if(n){kiesNes(n);klank(300,.06,.08);return;}
     const g=gebOnder(wx,wy);
     kiesGebou(g);                                    // null sluit die paneel
     if(g){klank(400,.05,.07);return;}
@@ -1640,6 +1664,7 @@ function update(dt){
   mureTik(dt);                     // die muur-indeks moet VARS wees voor mensTik loop
   for(const m of MENSE)mensTik(m,dt);
   krygsmagTik(dt);   // kasernes, oefentou, eenhede
+  nesteTik(dt);      // ryping, broei, geveg
   gelukFaktore();                  // hou die kaart vars; die DRYF gebeur per dag
 
   /* DIE KOS-KLOK — 'n akkumulator wat EEN eenheid op 'n slag laat val, sodat die
@@ -1759,14 +1784,16 @@ function update(dt){
   if(T>55&&!S.g3&&DWALERS.length===0&&dwalerT>0){dwalerT=0;maakDwaler();
     wysPrompt('’n Dwaler. Tik die klok — almal hardloop skuiling toe.');}
   dwalerT-=dt;
-  if(dwalerT<=0&&DWALERS.length<2&&T>120){dwalerT=95+R()*70;maakDwaler();}
+  /* Die los dwaler was die plekhouer-bedreiging. Die neste is nou die bron. */
+  if(dwalerT<=0&&DWALERS.length<2&&T>120&&!NESTE.length){dwalerT=95+R()*70;maakDwaler();}
   for(const d of DWALERS){
+    if(d.eie){nesDwalerTik(d,dt);continue;}   // nes-zombies loop hul eie roete
     d.tred+=dt*4.6;
     let doel=null,bd=1e12;
     for(const m of MENSE){const q=dist2(d.x,d.y,m.x,m.y);if(q<bd){bd=q;doel=m;}}
     // 'n wagtoring hou hulle weg
     let bang=false;
-    for(const g of GEB)if(g.klaar&&GT[g.tipe].lig&&dist2(d.x,d.y,g.x,g.y)<300*300)bang=true;
+    for(const g of GEB)if(g.klaar&&GT[g.tipe].lig&&dist2(d.x,d.y,g.x,g.y)<300*300){bang=true;break;}
     if(KLOKAAN||bang||bd>560*560)d.leiband+=dt;else d.leiband=0;
     /* HARDE JAAG-PERK. Sonder dit volg 'n dwaler die vlugtendes tot by die stoep,
        staan daar, en hernu hul skrik elke raam — een dwaler vries die hele dorp
@@ -2359,7 +2386,8 @@ function tekenMens(m){
   ctx.fillStyle='rgba(226,240,180,.32)';ctx.fillRect(-5,-19,2.5,13);
   ctx.fillStyle='#dfa987';ctx.fillRect(-4,-27,8,8);
   ctx.fillStyle=m.hare;ctx.fillRect(-4,-29,8,3);
-  const kap=m.taak&&(m.taak.tipe==='kap'||m.taak.tipe==='delf'&&m.taak.fase===1||m.taak.tipe==='bou');
+  const kap=m.taak&&(m.taak.tipe==='kap'||m.taak.tipe==='delf'&&m.taak.fase===1||
+                     m.taak.tipe==='bou'||m.taak.tipe==='storm'&&m.taak.fase===1);
   if(kap&&!m.dra){
     const sw=Math.sin(m.slaan/0.9*Math.PI);
     ctx.save();ctx.translate(4,-16);ctx.rotate(-.6+sw*1.5);
@@ -2926,11 +2954,12 @@ function tekenDwaler(d){
   ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(d.x,d.y+2,8,3,0,0,TAU);ctx.fill();
   ctx.save();ctx.translate(d.x,d.y+wip*.5);
   ctx.fillStyle='#2b3a22';ctx.fillRect(-4,-6,3.5,7);ctx.fillRect(1,-6,3.5,7);
-  ctx.fillStyle='#4e6b34';ctx.fillRect(-5,-18,10,12);
+  const zk=d.eie?(d.vlak>=3?'#7a3a24':'#6a4f2c'):'#4e6b34';   // 'n nes-zombie lyk anders as 'n dwaler
+  ctx.fillStyle=zk;ctx.fillRect(-5,-18,10,12);
   ctx.fillStyle='rgba(226,240,180,.3)';ctx.fillRect(-5,-18,2.5,12);
   ctx.fillStyle='#93a86c';ctx.fillRect(-4,-26,8,8);
   ctx.fillStyle='#c04030';ctx.fillRect(-2.5,-23,2,2);ctx.fillRect(1,-23,2,2);
-  ctx.fillStyle='#4e6b34';ctx.fillRect(-9,-15+wip,4,3);ctx.fillRect(5,-15-wip,4,3);
+  ctx.fillStyle=zk;ctx.fillRect(-9,-15+wip,4,3);ctx.fillRect(5,-15-wip,4,3);
   ctx.strokeStyle='#14180e';ctx.lineWidth=2;
   ctx.strokeRect(-5,-18,10,12);ctx.strokeRect(-4,-26,8,8);
   ctx.restore();
@@ -2995,6 +3024,7 @@ function render(){
   for(const h of HOENDERS)if(vis(h.x,h.y,20))dinge.push([h.y,3,h]);
   for(const d of DWALERS)if(vis(d.x,d.y,40))dinge.push([d.y,4,d]);
   verfLys(dinge);   // eenhede + die kaserne se oorlaag, y-gesorteer saam met die res
+  for(const n of NESTE)if(vis(n.x,n.y,220))dinge.push([n.y+16,T_NES,n]);
   dinge.push([PA.y,5,PA]);
   dinge.sort((a,b)=>a[0]-b[0]);
   for(const [,t,d] of dinge)VERWERS[t](d);   // sien VERWERS hieronder
@@ -3056,6 +3086,7 @@ function render(){
     ctx.globalCompositeOperation='source-over';
     ctx.restore();
   }
+  nesWysers();          // die neste wat NIE op die skerm is nie
   // toast
   if(toastT>0){
     ctx.font='20px VT323,monospace';ctx.textAlign='center';
@@ -3560,6 +3591,669 @@ function raam(now){
   }
 }
 
+/* ============================================================================
+   ZOMBIE-NESTE — die rede om die werf te verlaat.
+
+   Die plaas kan homself voed en bou en dan stilstaan. Die nes is die klok wat
+   nie ophou tik nie: hy broei, hy ryp, en wat hy uitstuur vreet die spens leeg.
+   Die enigste antwoord is om MENSE WEG TE VAT van die werk af en uit te marsjeer
+   — en dít is die prys, want terwyl hulle weg is, groei niks en delf niemand.
+
+   DRIE BANDE, geyk op die stapper (52 px/s) en die dag (240s):
+     band 0  600-900px    ~15s stap    die eerste oorwinning, leer die lus
+     band 1  980-1320px   ~22s stap    kos ’n behoorlike kommando
+     band 2 1380-1760px   ~29s stap    ’n halwe dag se werk; net ’n groot dorp haal dit
+
+   RYPING is die dryf: laat staan hom en hy klim vlak 1 -> 3, kry meer lewe,
+   broei vinniger en byt harder. Die spel se rigting is dus altyd "watter nes
+   eerste", nooit "niks om te doen nie".
+
+   KOS-YKING WORD GERESPEKTEER: ’n zombie by die werf steel EEN kos elke 14s en
+   loop na 55s weg — ±4 kos per besoek. Een tuinier lewer ~16 kos/dag, so een
+   vlak-1 nes vreet omtrent ’n derde van ’n tuinier op. Drie ryp neste vreet twee.
+   DRYF-GEWILDHEID WORD GERESPEKTEER: neste voeg RYE by gelukFaktore(), hulle
+   skryf nooit self aan S.geluk nie.
+   ============================================================================ */
+
+/* Band-tabel. hp is in HOUE (een houe elke 0.9s per man, presies die kap-ritme),
+   byt is sekondes tussen bytwonde. Gemeet: band0/vlak1 val in ~22s voor vier man
+   en kos ±1 wond elk; band2/vlak3 vra agt man. */
+const NES_BANDE=[
+  {min: 600,maks: 900,hp: 96,byt:4.4,munt: 6,buit:{hout: 5,klip:2},rypDae:3.0,broei:165,dreig:-4},
+  {min: 980,maks:1320,hp:140,byt:3.6,munt:11,buit:{hout: 9,klip:4},rypDae:4.0,broei:198,dreig:-3},
+  {min:1380,maks:1760,hp:190,byt:3.0,munt:18,buit:{hout:13,klip:7},rypDae:5.5,broei:231,dreig:-2},
+];
+const NES_MAKSVLAK=3;
+const NES_HPVLAK=34;          // ekstra lewe per rypingsvlak
+const NES_NAME=['die Ou Kraal','die Spruit','die Doringdig','die Sinkdam','die Kloof',
+                'die Bult','die Vlei','die Klipkop','die Ou Werf','die Leegte'];
+const NES_UIT=[2,3,4];        // hoeveel zombies gelyk uit een nes mag loop
+const KOM_GROOTTES=[4,6,8,10];// kommando-grootte; die speler kies (4 is die kleinste wat wen)
+const KOM_FAKKEL=1;           // een fakkel, een hout per man — ’n uitmars kos materiaal
+const NES_WONDBREEK=3;        // by drie wonde breek ’n man en hardloop huis toe
+const NES_STEEL=14;           // sekondes tussen kos-diefstalle by die werf
+const NES_BINNE=55;           // hoe lank ’n zombie by die werf bly voor hy wegdwaal
+
+const NESTE=[];
+let NESKIES=null;             // die gekose nes (deel die #gebkaart met geboue)
+let nesNaamI=0, nesSaaiT=0, nesKaartT=0;
+
+function nesNaam(i){return NES_NAME[i%NES_NAME.length];}
+function nesMaksHp(n){return NES_BANDE[n.band].hp+NES_HPVLAK*(n.vlak-1);}
+function nesBytT(n){
+  const basis=Math.max(1.4,NES_BANDE[n.band].byt-0.5*(n.vlak-1));
+  /* Snags byt hy 1.6x vinniger. Dít is die hele rede om die dag te lees voor jy
+     uitstap — en dit maak die dag/nag-siklus ’n taktiese ding, nie net beligting. */
+  return nagAlpha()>0.35?basis*0.62:basis;
+}
+function nesBroeiT(n){return NES_BANDE[n.band].broei*[1,0.72,0.52][n.vlak-1];}
+function nesAfstand(n){return Math.hypot(n.x-WERF.x,n.y-WERF.y);}
+function nesMunt(n){return NES_BANDE[n.band].munt+4*(n.vlak-1);}
+function nesBuit(n){
+  const b=NES_BANDE[n.band].buit;
+  return {hout:b.hout+(n.vlak-1),klip:b.klip+(n.vlak-1)};
+}
+/* HOEVEEL MAN? Die speler mag nie hierdie som in sy kop hoef te doen nie. Die
+   maatstaf is die nes se lewe gedeel deur hoe vinnig hy byt (albei in sekondes),
+   en die drempels kom uit die simulasie: onder 25 wen vier man skoon, onder 45
+   vat dit ses, onder 75 agt, daarbo tien. Snags weeg dit 1.6x swaarder. */
+function nesAanbeveel(n){
+  const maat=nesMaksHp(n)*0.9/nesBytT(n);
+  return maat<25?4:maat<45?6:maat<75?8:10;
+}
+function nesLewendes(n){
+  let k=0;for(const d of DWALERS)if(d.nes===n&&!d.weg&&!d.dood)k++;
+  return k;
+}
+function nuweNes(x,y,band,ni){
+  const n={x,y,band,vlak:1,naam:nesNaam(ni),ni,ryp:0,broeiT:NES_BANDE[band].broei*0.55,
+           hp:0,puls:0,skud:0,bytT:2,rusT:0,gesien:0,dood:false};
+  n.hp=nesMaksHp(n);
+  return n;
+}
+/* Waar mag ’n nes staan? Nie in die water, nie op die klipbank, nie op die werf
+   se drumpel, en nie bo-op mekaar nie — anders lyk twee neste soos een. */
+function nesPlekVry(x,y){
+  if(x<150||x>WW-150||y<150||y>WH-150)return false;
+  const dx=(x-DAM.x)/(DAM.rx+90),dy=(y-DAM.y)/(DAM.ry+80);
+  if(dx*dx+dy*dy<1)return false;
+  if(dist2(x,y,KLIPBANK.x,KLIPBANK.y)<(KLIPBANK.r+90)*(KLIPBANK.r+90))return false;
+  if(dist2(x,y,WERF.x,WERF.y)<520*520)return false;
+  for(const q of NESTE)if(dist2(x,y,q.x,q.y)<360*360)return false;
+  for(const g of GEB)if(dist2(x,y,g.x,g.y)<200*200)return false;
+  return true;
+}
+function nesPlek(band){
+  const B=NES_BANDE[band];
+  for(let i=0;i<80;i++){
+    const a=R()*TAU, d=B.min+R()*(B.maks-B.min);
+    /* y word saamgedruk (die wêreld is 3200x2400, so ’n suiwer sirkel op band 2
+       val bo en onder buite die kaart uit), MAAR ons deel weer deur die skaal
+       sodat die WERKLIKE afstand presies d bly. Sonder hierdie deling lê ’n
+       "verre" nes wat toevallig noord gesaai is nader as ’n band-0 nes, en dan
+       lieg die hele band-tabel oor sy stap-tyd. */
+    const sk=Math.hypot(Math.cos(a),Math.sin(a)*0.74)||1;
+    const x=WERF.x+Math.cos(a)*d/sk, y=WERF.y+Math.sin(a)*0.74*d/sk;
+    if(nesPlekVry(x,y))return {x,y};
+  }
+  return null;
+}
+function saaiNeste(){
+  NESTE.length=0;nesNaamI=0;
+  const tel=[1,2,2];                 // een naby om op te leer, vier om na toe te groei
+  for(let b=0;b<3;b++)for(let k=0;k<tel[b];k++){
+    const p=nesPlek(b);
+    if(p)NESTE.push(nuweNes(p.x,p.y,b,nesNaamI++));
+  }
+}
+
+/* ============================== RYPING EN BROEI ============================== */
+function nesteTik(dt){
+  nesTorings();
+  for(let i=NESTE.length-1;i>=0;i--){
+    const n=NESTE[i];
+    if(n.skud>0)n.skud-=dt;
+    n.puls+=dt;
+
+    // RYPING — die stil dryf. ’n Nes wat jy ignoreer, word ’n ander nes.
+    if(n.vlak<NES_MAKSVLAK){
+      n.ryp+=dt;
+      if(n.ryp>=NES_BANDE[n.band].rypDae*VOLLEDAG){
+        n.ryp=0;n.vlak++;n.hp=nesMaksHp(n);n.skud=1.2;
+        klank(90,.5,.16);spanne(n.x,n.y-10,10,'#6f9a3a');
+        paSê('Die nes by '+n.naam+' het gegroei.');
+        plToast(n.naam+' se nes is nou vlak '+n.vlak+'.');
+        persistSoon();
+      }
+    }
+
+    // BROEI — hy stuur uit, maar nooit meer as sy plek kan hou nie
+    n.broeiT-=dt;
+    if(n.broeiT<=0){
+      n.broeiT=nesBroeiT(n);
+      if(nesLewendes(n)<NES_UIT[n.vlak-1]){
+        maakNesDwaler(n);n.skud=.5;
+        klank(70,.28,.12);spanne(n.x,n.y-6,6,'#7a9a4a');
+        if(!n.gesien){n.gesien=1;plToast('Iets kom uit '+n.naam+' uit.');persistSoon();}
+      }
+    }
+
+    // GEVEG — die nes byt terug. Aanvallers word GETEL, nie geregistreer nie,
+    // sodat ’n man wat breek of val vanself uit die telling verdwyn.
+    let aanvTel=0;
+    for(const m of MENSE)
+      if(m.taak&&m.taak.tipe==='storm'&&m.taak.nes===n&&m.taak.fase===1)aanvTel++;
+    const teiken=nesKies(n);
+    if(teiken){
+      n.bytT-=dt;
+      if(n.bytT<=0){n.bytT=nesBytT(n);nesByt(n,teiken);}
+    }
+    if(aanvTel>0){n.rusT=0;}
+    else{
+      /* GENEES NA ’N MISLUKTE AANVAL. Sonder dit kan die speler ’n nes in tien
+         gratis happies afbreek; met dit is ’n teruggeslane kommando ’n WERKLIKE
+         verlies — die fakkelhout is op, die wonde is daar, en die nes staan weer. */
+      n.rusT+=dt;
+      if(n.rusT>20&&n.hp<nesMaksHp(n))n.hp=Math.min(nesMaksHp(n),n.hp+4*dt);
+    }
+    if(n.hp<=0)nesVal(n,i);
+  }
+
+  // HERSAAI — die veld bly nooit lank skoon nie; die spel moet rigting hou.
+  if(NESTE.length<3){
+    nesSaaiT-=dt;
+    if(nesSaaiT<=0){
+      nesSaaiT=4*VOLLEDAG;
+      const b=NESTE.length===0?2:1+((R()*2)|0);   // nooit weer reg op die drumpel
+      const p=nesPlek(b);
+      if(p){
+        NESTE.push(nuweNes(p.x,p.y,b,nesNaamI++));
+        paSê('Daar’s ’n nuwe nes ver in die veld.');
+        plToast('’n Nuwe nes by '+NESTE[NESTE.length-1].naam+'.');
+        klank(80,.4,.13);persistSoon();
+      }
+    }
+  }else nesSaaiT=4*VOLLEDAG;
+
+  nesHud();
+  nesKaartT-=dt;
+  if(nesKaartT<=0){nesKaartT=.4;if(NESKIES)kiesNes(NESKIES);}
+}
+
+/* ============================== DIE BYT ==============================
+   Die byt-poel is die manne WAT SLAAN, plus dié wat pas gebreek het en nog binne
+   die nes se bereik kruip. Dit is die hele dood-reël: ’n gewonde man wat betyds
+   uitkom, leef; een wat gebreek terwyl die nes nog vinnig byt, kom nie uit nie.
+   Daarom is ’n TE KLEIN kommando die duurste fout — die bytte kom vinniger as
+   wat die gebrokenes kan wegkom. */
+function nesKies(n){
+  let keuse=null,tel=0;
+  for(const m of MENSE){
+    const slaan=!!(m.taak&&m.taak.tipe==='storm'&&m.taak.nes===n&&m.taak.fase===1);
+    const kruip=(m.wond||0)>=NES_WONDBREEK&&m.vlug>0&&dist2(m.x,m.y,n.x,n.y)<260*260;
+    if(!slaan&&!kruip)continue;
+    tel++;if(R()<1/tel)keuse=m;          // eweredige keuse sonder ’n tweede lys
+  }
+  return keuse;
+}
+function nesByt(n,m){
+  if(!m)return;
+  if((m.wond||0)>=NES_WONDBREEK){nesSterf(m,n);return;}
+  m.wond=(m.wond||0)+1;
+  spanne(m.x,m.y-14,5,'#c05038');klank(120,.16,.13);
+  if(m.wond>=NES_WONDBREEK){
+    /* BREEK. Die vlug-blok bo in mensTik vat hom stoep toe — ons hoef net sy
+       taak te los. Hy bly LEWE en genees ’n wond per dag: die prys is sy arbeid. */
+    m.taak=null;m.vlug=Math.max(m.vlug||0,5);
+    plToast(m.naam+' het teruggeval — gewond.');klank(150,.2,.12);
+  }
+}
+function nesSterf(m,n){
+  const i=MENSE.indexOf(m);
+  if(i<0)return;
+  if(m.werkplek){const k=m.werkplek.werkers.indexOf(m);if(k>=0)m.werkplek.werkers.splice(k,1);}
+  MENSE.splice(i,1);
+  spanne(m.x,m.y-12,16,'#c05038');klank(60,.6,.2);
+  S.nesRou=Math.min(12,(S.nesRou||0)+5);
+  plToast(m.naam+' het nie teruggekom nie.');
+  paSê('Ons het ’n mens by '+n.naam+' verloor.');
+  bemanGeboue();persistSoon();
+}
+
+/* ============================== DIE NES VAL ============================== */
+function nesVal(n,i){
+  NESTE.splice(i,1);
+  n.dood=true;
+  spanne(n.x,n.y-8,26,'#e8c96a');spanne(n.x,n.y,14,'#6f9a3a');
+  klank(160,.5,.2);setTimeout(()=>klank(660,.3,.16),160);
+  for(const d of DWALERS)if(d.nes===n)d.weg=true;      // sy goed verstrooi
+
+  const munt=nesMunt(n);
+  goudBy(munt);                        // WERF-geld: neste betaal in S.goud, nooit in lopie-munte
+  S.nesRoem=Math.min(12,(S.nesRoem||0)+6);
+
+  /* DIE BUIT LOOP OP BENE HUIS TOE — die grondreël: geen getal verander sonder
+     dat ’n lyf beweeg nie. Elke oorlewende vat een vrag; wat oorbly, lê op die
+     grond en die dorp gaan haal dit later (die 'dra'-taak doen dit vanself). */
+  const buit=nesBuit(n);
+  let hout=buit.hout, klip=buit.klip;
+  for(const m of MENSE){
+    if(!(m.taak&&m.taak.tipe==='storm'&&m.taak.nes===n))continue;
+    m.taak=null;
+    if(m.dra)continue;
+    if(hout>0){m.dra='hout';hout--;}
+    else if(klip>0){m.dra='klip';klip--;}
+    else m.taak={tipe:'stap',tx:STOEP.x+rand(-60,60),ty:STOEP.y+rand(-10,20)};
+    /* Sonder taak en MET ’n vrag vat die vangnet in mensTik hom hoop toe. */
+  }
+  let los=Math.min(8,hout+klip);          // hoogstens agt los vragte — nie ’n valstrik
+  for(let k=0;k<los;k++){
+    const soort=hout>0?(hout--,'hout'):(klip--,'klip');
+    VRAGTE.push({x:n.x+rand(-40,40),y:n.y+rand(10,44),soort,geëis:0});
+  }
+  paSê(n.naam+' se nes is uitgebrand. '+munt+' goud.');
+  plToast('Nes vernietig — '+munt+' 🪙 goud, buit kom huis toe.');
+  if(NESKIES===n)kiesNes(null);
+  persistSoon();
+}
+
+/* ============================== DIE ZOMBIES ==============================
+   Hulle deel die DWALERS-lys (dieselfde verwer, dieselfde geluk-ry), maar loop
+   hul eie roete: ’n dwaler dwaal, ’n nes-zombie KOM. Die vlag d.eie laat die
+   bestaande dwaler-lus hulle oorslaan. */
+function maakNesDwaler(n){
+  const a=R()*TAU;
+  DWALERS.push({x:n.x+Math.cos(a)*26,y:n.y+Math.sin(a)*18,
+    tred:R()*TAU,leiband:0,jaag:0,weg:false,
+    eie:1,nes:n,spd:18+2.5*n.vlak,stealT:NES_STEEL,binneT:NES_BINNE,
+    leefT:NES_BINNE*6,vlak:n.vlak});
+}
+/* Die toringlys word EEN keer per raam gebou, nie een keer per zombie nie —
+   met vier neste vol is dit twintig soektogte deur GEB per raam op 'n foon. */
+let NES_TORINGS=[];
+function nesTorings(){
+  NES_TORINGS.length=0;
+  for(const g of GEB)if(g.klaar&&GT[g.tipe].lig)NES_TORINGS.push(g);
+}
+function nesDwalerTik(d,dt){
+  d.tred+=dt*4.6;
+  /* Harde leeftyd. Sonder dit sirkel 'n zombie wat deur 'n wagtoring uitgehou
+     word vir ewig om die werf en die dreigement-telling kom nooit weer af nie. */
+  d.leefT-=dt;if(d.leefT<=0)d.weg=true;
+  let vx,vy;
+
+  /* ’n WAGTORING IS ’N WERKLIKE MUUR vir hulle: hulle kan nie binne sy kring kom
+     nie en skuur daarom om die werf. Vlak 1 hou 180px, vlak 3 hou 300px — dít is
+     wat die toring se opgradering nou werd is. */
+  let stoot=null;
+  for(const g of NES_TORINGS){
+    const r=120+60*gVlak(g);
+    if(dist2(d.x,d.y,g.x,g.y)<r*r){stoot=g;break;}
+  }
+
+  if(d.weg){
+    vx=d.x-WERF.x;vy=d.y-WERF.y;
+  }else if(stoot){
+    vx=d.x-stoot.x;vy=d.y-stoot.y;
+  }else{
+    // die naaste mens buite die stoep, anders reguit werf toe
+    let doel=null,bd=340*340;
+    for(const m of MENSE){
+      if(m.taak&&m.taak.tipe==='storm')continue;      // soldate skrik hom nie af nie
+      if(dist2(m.x,m.y,STOEP.x,STOEP.y)<70*70)continue;
+      const q=dist2(d.x,d.y,m.x,m.y);
+      if(q<bd){bd=q;doel=m;}
+    }
+    if(doel&&!KLOKAAN){vx=doel.x-d.x;vy=doel.y-d.y;}
+    else{vx=WERF.x-d.x;vy=WERF.y-d.y;
+      if(vx*vx+vy*vy<180*180){vx=Math.cos(d.tred*.2);vy=Math.sin(d.tred*.2);}}
+  }
+  const l=Math.hypot(vx,vy)||1;
+  const dox=d.x, doy=d.y;
+  d.x+=vx/l*(d.spd||18)*dt;d.y+=vy/l*(d.spd||18)*dt;
+  dwalerMuur(d,dox,doy,dt);            // 'n muur stop OOK 'n nes-zombie — anders loop hy deur palissades
+
+  // SKRIK — presies die bestaande reël: die stoep is veilig, soldate skrik nie
+  if(!d.weg)for(const m of MENSE){
+    if(m.taak&&m.taak.tipe==='storm')continue;
+    if(dist2(m.x,m.y,STOEP.x,STOEP.y)<70*70)continue;
+    if(dist2(d.x,d.y,m.x,m.y)<95*95&&!muurTussen(d.x,d.y,m.x,m.y,false))m.vlug=Math.max(m.vlug||0,3);
+  }
+
+  /* DIE WERKLIKE SKADE. Hy vreet die spens — en dít loop reguit in die kos-yking
+     en dus in die honger-venster en dus in die dryf-gewildheid in. Is daar niks
+     te vreet nie, breek hy ’n bousite se aangedraagde vrag af. */
+  if(!d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)<240*240){
+    d.binneT-=dt;d.stealT-=dt;
+    if(d.stealT<=0){
+      d.stealT=NES_STEEL;
+      if(voorraad('kos')>0){
+        /* Deur die GROOTBOEK, nie bykom() nie: 'n rou bykom('kos',-1) laat S.kos daal
+           terwyl S.kosS staan, en die invariant kosSom()===S.kos breek by die eerste
+           raid. Die harnas het dit gevang. */
+        kosEet(1);spanne(d.x,d.y-14,5,'#c05038');klank(110,.2,.12);
+        plToast('Iets vreet in die spens.');
+      }else{
+        const s=GEB.find(g=>!g.klaar&&g.gelewer>g.verbruik);
+        if(s){s.gelewer--;if(s.gelewerH>0)s.gelewerH--;else if(s.gelewerK>0)s.gelewerK--;
+          spanne(s.x,s.y,6,'#c05038');klank(100,.24,.12);plToast('Hulle breek die bouwerk af.');}
+      }
+    }
+    if(d.binneT<=0)d.weg=true;            // versadig — hy dwaal terug
+  }
+  if(d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)>1900*1900)d.dood=true;
+}
+
+/* ============================== DIE UITMARS ============================== */
+function komGrootte(){return KOM_GROOTTES[clamp(S.komGr|0,0,KOM_GROOTTES.length-1)];}
+function komKandidate(nes){
+  const lys=MENSE.filter(m=>!(m.vlug>0)&&(m.wond||0)<NES_WONDBREEK&&
+                            !(m.taak&&m.taak.tipe==='storm'));
+  /* Werklose eerste, dan die naaste: so word ’n tuinier laaste gevat en die
+     kos-ketting bly so lank moontlik heel. */
+  lys.sort((a,b)=>((a.werkplek?1:0)-(b.werkplek?1:0))||
+                  (dist2(a.x,a.y,nes.x,nes.y)-dist2(b.x,b.y,nes.x,nes.y)));
+  return lys;
+}
+function stuurKommando(nes){
+  if(!nes||nes.dood)return;
+  if(KLOKAAN){plToast('Die klok lui — niemand gaan nou uit nie.');klank(150,.18,.1);return;}
+  const min=KOM_GROOTTES[0];
+  let n=komGrootte();
+  const kand=komKandidate(nes);
+  /* Die plaas bly NOOIT leeg nie: twee mense bly agter, anders staan die kos stil
+     en die dorp verhonger terwyl die kommando weg is. */
+  if(MENSE.length-n<2)n=MENSE.length-2;
+  n=Math.min(n,kand.length,Math.floor(voorraad('hout')/KOM_FAKKEL));
+  if(n<min){
+    plToast(voorraad('hout')<min*KOM_FAKKEL?'Te min hout vir fakkels.'
+                                           :'Te min mense om uit te marsjeer.');
+    klank(150,.18,.1);return;
+  }
+
+  bykom('hout',-n*KOM_FAKKEL);
+  for(let i=0;i<n;i++){
+    const m=kand[i];
+    if(m.dra)losVrag(m);
+    /* Die ou taak word NET gelos — ’n vat-taak moet sy eis by die site terugtrek,
+       anders glo die site vir ewig dat materiaal onderweg is. */
+    if(m.taak&&m.taak.tipe==='vat'&&m.taak.site){
+      const st=m.taak.site;st.opPad--;
+      if(m.taak.soort==='hout')st.opPadH--;else st.opPadK--;
+    }
+    if(m.taak&&m.taak.tipe==='bou'&&m.taak.site)m.taak.site.bouer=null;
+    if(m.taak&&m.taak.tipe==='kap'&&m.taak.boom)m.taak.boom.geëis=Math.max(0,m.taak.boom.geëis-1);
+    const a=(i/n)*TAU;
+    m.taak={tipe:'storm',nes,fase:0,gleuf:a,
+            tx:nes.x+Math.cos(a)*44,ty:nes.y+Math.sin(a)*32};
+    m.slaan=0;
+  }
+  klank(520,.16,.14);setTimeout(()=>klank(392,.24,.14),150);
+  paSê('Vat fakkels. Ons stap na '+nes.naam+' toe.');
+  plToast(n+' man marsjeer · '+(n*KOM_FAKKEL)+'🪵 fakkels');
+  persistSoon();
+}
+
+/* ============================== DIE GELUK-RYE ==============================
+   Neste SKRYF NOOIT aan S.geluk nie — hulle gee net rye vir dagDryf() se som,
+   presies soos die rantsoen en die braai. */
+function nesGelukRye(rye){
+  let dreig=0,naby=0;
+  for(const n of NESTE){
+    const d=nesAfstand(n);
+    if(d<760){dreig+=NES_BANDE[n.band].dreig-2*(n.vlak-1);naby++;}
+    else if(d<1150){dreig+=Math.round((NES_BANDE[n.band].dreig-2*(n.vlak-1))/2);naby++;}
+  }
+  if(dreig<0)rye.push([naby+(naby===1?' nes broei naby':' neste broei naby'),Math.max(-8,dreig),'veiligheid']);
+  else if(NESTE.length)rye.push(['Die naby veld is skoon',+2,'veiligheid']);
+  else rye.push(['Geen nes bly oor nie',+4,'veiligheid']);
+  const gew=MENSE.filter(m=>(m.wond||0)>0).length;
+  if(gew>=2)rye.push([gew+' gewondes lê rond',-3,'gebeurtenis']);
+  if(S.nesRoem>0)rye.push(['’n Nes uitgeroei',S.nesRoem,'gebeurtenis']);
+  if(S.nesRou>0)rye.push(['Ons het mense verloor',-S.nesRou,'gebeurtenis']);
+}
+/* Word NA die dag se som geroep: die roem verbleik, die rou bedaar, en wonde
+   genees een per dag — ’n gewonde man is ’n paar dae se swakker kommando. */
+function nesDagRol(){
+  S.nesRoem=Math.max(0,(S.nesRoem||0)-3);
+  S.nesRou =Math.max(0,(S.nesRou ||0)-2);
+  for(const m of MENSE)if(m.wond)m.wond--;
+}
+
+/* ============================== DIE KAART (UI) ============================== */
+let nesKnA=null,nesKnB=null;
+function nesKnoppe(aan){
+  const kaart=document.getElementById('gebkaart');
+  if(!nesKnA){
+    nesKnA=document.createElement('button');nesKnA.className='kn';
+    nesKnA.style.cssText='margin-top:8px;width:100%';
+    nesKnA.onclick=()=>{if(NESKIES)stuurKommando(NESKIES);};
+    kaart.appendChild(nesKnA);
+    nesKnB=document.createElement('button');nesKnB.className='kn';
+    nesKnB.style.cssText='margin-top:6px;width:100%';
+    nesKnB.onclick=()=>{S.komGr=((S.komGr||0)+1)%KOM_GROOTTES.length;persistSoon();
+                        if(NESKIES)kiesNes(NESKIES);};
+    kaart.appendChild(nesKnB);
+  }
+  nesKnA.style.display=aan?'block':'none';
+  nesKnB.style.display=aan?'block':'none';
+  document.getElementById('gkOpg').style.display=aan?'none':'';
+}
+function nesOnder(wx,wy){
+  let beste=null,bd=1e12;
+  for(const n of NESTE){
+    const hw=54,hh=44;                    // ruim raak-teiken: ’n vinger is nie ’n muis nie
+    if(Math.abs(wx-n.x)<=hw&&Math.abs(wy-n.y)<=hh){
+      const d=dist2(wx,wy,n.x,n.y);if(d<bd){bd=d;beste=n;}
+    }
+  }
+  return beste;
+}
+function kiesNes(n){
+  const kaart=document.getElementById('gebkaart');
+  NESKIES=n;
+  if(!n||n.dood){NESKIES=null;nesKnoppe(false);kaart.style.display='none';return;}
+  GEKIES=null;
+  document.getElementById('gkNaam').textContent='💀 NES · '+n.naam.toUpperCase();
+  const maks=nesMaksHp(n), aanv=MENSE.filter(m=>m.taak&&m.taak.tipe==='storm'&&m.taak.nes===n).length;
+  const rye=[['Vlak',n.vlak+'/'+NES_MAKSVLAK],
+             ['Lewe',Math.ceil(n.hp)+'/'+maks],
+             ['Afstand',Math.round(nesAfstand(n)/16)+' m'],
+             ['Broei',Math.ceil(n.broeiT)+'s · '+nesLewendes(n)+'/'+NES_UIT[n.vlak-1]+' uit'],
+             ['Buit',nesMunt(n)+'🪙 '+nesBuit(n).hout+'🪵 '+nesBuit(n).klip+'🪨']];
+  if(n.vlak<NES_MAKSVLAK)
+    rye.push(['Ryp oor',Math.ceil((NES_BANDE[n.band].rypDae*VOLLEDAG-n.ryp)/VOLLEDAG*10)/10+' dae']);
+  const aanb=nesAanbeveel(n);
+  rye.push(['Vat minstens',aanb+' man']);
+  if(aanv)rye.push(['Aanvallers',aanv+' man']);
+  if(nagAlpha()>0.35)rye.push(['Snags byt hy harder','⚠ wag vir lig']);
+  document.getElementById('gkRye').innerHTML=
+    rye.map(r=>'<div class="r"><span>'+r[0]+'</span><span class="'+
+      (r[0]==='Buit'?'op':r[0]==='Vlak'||r[0]==='Aanvallers'?'':'af')+'">'+r[1]+'</span></div>').join('');
+  nesKnoppe(true);
+  const g=komGrootte();
+  const min4=KOM_GROOTTES[0];
+  nesKnA.innerHTML='⚔️ Marsjeer<small>'+g+' man · '+(g*KOM_FAKKEL)+'🪵 fakkels'+
+    (g<aanb?' · te min':'')+'</small>';
+  nesKnA.className='kn'+(g<aanb?' rooi':' groen');
+  nesKnA.disabled=KLOKAAN||MENSE.length<min4+2||voorraad('hout')<min4*KOM_FAKKEL;
+  nesKnB.innerHTML='👥 Kommando: '+g+'<small>tik om te wissel</small>';
+  kaart.style.display='block';
+}
+
+/* ============================== DIE HUD ==============================
+   Twee blokkies wat in JS gemaak word sodat die HTML/CSS onaangeraak bly. */
+let hNeste=null,hMunt=null,hudOu='';
+function nesHudBou(){
+  if(hNeste)return;                               // idempotent: nesBegin() mag meer as een keer loop
+  const hud=document.getElementById('hud'), voor=document.getElementById('dagwys');
+  hNeste=document.createElement('div');hNeste.className='b';
+  hNeste.style.cssText='pointer-events:auto;cursor:pointer';
+  hNeste.innerHTML='💀 <b id="hNesN">0</b>';
+  /* ’n Tik spring die kamera na die naaste nes: op ’n foon is dit die enigste
+     bekostigbare manier om ’n dreigement 1500px ver te gaan kyk. */
+  hNeste.onclick=()=>{
+    let b=null,bd=1e12;
+    for(const n of NESTE){const d=dist2(n.x,n.y,WERF.x,WERF.y);if(d<bd){bd=d;b=n;}}
+    if(b){KAM.x=b.x;KAM.y=b.y;kamKlem();kiesNes(b);klank(420,.06,.08);}
+  };
+  hud.insertBefore(hNeste,voor);
+}
+function nesHud(){
+  if(!hNeste)return;
+  let naaste=1e9,erg=0;
+  for(const n of NESTE){naaste=Math.min(naaste,nesAfstand(n));erg=Math.max(erg,n.vlak);}
+  const t=NESTE.length+(NESTE.length?' · '+Math.round(naaste/16)+'m':'');
+  if(t!==hudOu){
+    hudOu=t;
+    document.getElementById('hNesN').textContent=t;
+    hNeste.style.borderColor=naaste<760?'#c05038':erg>=3?'#c08a38':'#5c4a2e';
+  }
+}
+
+/* ============================== TEKEN ==============================
+   Die nes moet op ’n uitgezoemde foon (z≈0.45) LEES. Daarom: ’n donker vorm met
+   ’n harde buitelyn, ’n koue gloed wat pols, en ’n skedel-merker wat teen die
+   zoem geskaal word sodat hy altyd omtrent ewe groot op die glas is. */
+function tekenNes(n){
+  const puls=0.5+0.5*Math.sin(n.puls*2.2);
+  const naby=1-clamp(n.broeiT/nesBroeiT(n),0,1);      // hoe nader aan uitbroei, hoe warmer
+  const sk=n.skud>0?Math.sin(n.skud*50)*3:0;
+  const gr=44+8*n.vlak;
+  ctx.save();ctx.translate(n.x+sk,n.y);
+
+  // koue gloed — die dreigement wat jy sien voor jy die vorm sien
+  const gl=ctx.createRadialGradient(0,-6,6,0,-6,gr*2.4);
+  gl.addColorStop(0,'rgba(96,168,72,'+(0.16+0.14*puls+0.2*naby)+')');
+  gl.addColorStop(1,'rgba(96,168,72,0)');
+  ctx.fillStyle=gl;ctx.beginPath();ctx.arc(0,-6,gr*2.4,0,TAU);ctx.fill();
+
+  // dreig-kring: waarbinne hy jou mense aanvat
+  ctx.strokeStyle='rgba(192,80,56,'+(0.20+0.16*puls)+')';ctx.lineWidth=2;
+  ctx.setLineDash([9,8]);ctx.beginPath();ctx.ellipse(0,0,gr*2.1,gr*1.35,0,0,TAU);ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle='rgba(10,14,7,.4)';
+  ctx.beginPath();ctx.ellipse(4,7,gr*.95,gr*.36,0,0,TAU);ctx.fill();
+  // die hoop self
+  ctx.fillStyle='#2b2a1c';
+  ctx.beginPath();ctx.ellipse(0,0,gr*.86,gr*.5,0,0,TAU);ctx.fill();
+  ctx.fillStyle='#3d3a24';
+  ctx.beginPath();ctx.ellipse(-4,-5,gr*.66,gr*.36,0,0,TAU);ctx.fill();
+  ctx.strokeStyle='#14180e';ctx.lineWidth=3;
+  ctx.beginPath();ctx.ellipse(0,0,gr*.86,gr*.5,0,0,TAU);ctx.stroke();
+  // die keel
+  ctx.fillStyle='#0b1207';
+  ctx.beginPath();ctx.ellipse(-2,-6,gr*.3,gr*.17,0,0,TAU);ctx.fill();
+  ctx.fillStyle='rgba(126,201,94,'+(0.35+0.4*naby)+')';
+  ctx.beginPath();ctx.ellipse(-2,-6,gr*.3*(0.4+0.3*puls),gr*.17*(0.4+0.3*puls),0,0,TAU);ctx.fill();
+  // doringpale — tel hulle en jy weet die vlak
+  const pale=3+n.vlak*2;
+  for(let i=0;i<pale;i++){
+    const a=(i/pale)*TAU+n.ni*0.7;
+    const px=Math.cos(a)*gr*.72, py=Math.sin(a)*gr*.42;
+    const hh=12+((i*7+n.ni*3)%9)+n.vlak*4;
+    ctx.strokeStyle='#c9c0aa';ctx.lineWidth=3.2;
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+(px>0?4:-4),py-hh);ctx.stroke();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px+(px>0?4:-4),py-hh);ctx.stroke();
+  }
+  // lewe-balk sodra hy geslaan is
+  const maks=nesMaksHp(n);
+  if(n.hp<maks-0.5){
+    ctx.fillStyle='rgba(10,14,7,.8)';ctx.fillRect(-gr*.8,-gr*.86,gr*1.6,7);
+    ctx.fillStyle='#c05038';ctx.fillRect(-gr*.8+1,-gr*.86+1,(gr*1.6-2)*clamp(n.hp/maks,0,1),5);
+  }
+  ctx.restore();
+
+  /* Skerm-vaste merker: skaal 1/z sodat hy by z=0.45 nie ’n stippel is nie. */
+  const s=1/KAM.z;
+  ctx.save();ctx.translate(n.x,n.y-gr*.9-16*s);ctx.scale(s,s);
+  ctx.font='19px VT323,monospace';ctx.textAlign='center';
+  const naam=n.naam+' · v'+n.vlak;
+  const w=ctx.measureText(naam).width+14;
+  ctx.fillStyle='rgba(10,14,7,.85)';ctx.fillRect(-w/2,-16,w,20);
+  ctx.strokeStyle=NESKIES===n?'#e0b64f':'#7a3427';ctx.lineWidth=2;ctx.strokeRect(-w/2,-16,w,20);
+  ctx.fillStyle='#d8b0a0';ctx.fillText(naam,0,0);
+  ctx.fillStyle='#c05038';ctx.font='17px VT323,monospace';
+  ctx.fillText('💀',0,-20);
+  ctx.restore();
+
+  if(NESKIES===n){
+    const z=Math.max(KAM.z,.05);
+    ctx.strokeStyle='#e8c96a';ctx.lineWidth=2.6/z;ctx.setLineDash([7/z,5/z]);
+    ctx.strokeRect(n.x-gr,n.y-gr*.7,gr*2,gr*1.4);ctx.setLineDash([]);
+  }
+}
+
+/* SKERMRAND-WYSERS. Dít is die kenmerk se hart op ’n foon: die kamera staan op
+   die werf, die neste is 900-1700px ver, en sonder ’n wyser bestaan hulle nie
+   vir die speler nie. Die pyl wys die rigting, die getal die afstand, en die
+   kleur die erns. Word in SKERM-ruimte geteken (na ctx.restore()). */
+function nesWysers(){
+  const mrgX=26, mrgB=150, mrgT=84;
+  ctx.save();
+  ctx.font='16px VT323,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  for(const n of NESTE){
+    const sx=(n.x-KAM.x)*KAM.z+VW/2, sy=(n.y-KAM.y)*KAM.z+VH/2;
+    if(sx>mrgX&&sx<VW-mrgX&&sy>mrgT&&sy<VH-mrgB)continue;      // hy is sigbaar
+    const cx=VW/2, cy=(mrgT+VH-mrgB)/2;
+    let dx=sx-cx, dy=sy-cy;
+    const hw=VW/2-mrgX, hh=(VH-mrgB-mrgT)/2;
+    const t=Math.min(hw/(Math.abs(dx)||1e-6),hh/(Math.abs(dy)||1e-6));
+    const px=cx+dx*t, py=cy+dy*t, hoek=Math.atan2(dy,dx);
+    const d=nesAfstand(n);
+    const kl=d<760?'#c05038':n.vlak>=3?'#c08a38':'#9aa07f';
+    const puls=0.6+0.4*Math.sin(n.puls*2.2);
+    ctx.save();ctx.translate(px,py);
+    ctx.globalAlpha=d<760?1:0.82;
+    ctx.rotate(hoek);
+    ctx.fillStyle=kl;
+    ctx.beginPath();ctx.moveTo(13,0);ctx.lineTo(-6,-9);ctx.lineTo(-6,9);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+    ctx.restore();
+    // die plaatjie sit ná binne, sodat hy nie oor die rand hang nie
+    const lx=clamp(px-Math.cos(hoek)*30,44,VW-44), ly=clamp(py-Math.sin(hoek)*30,mrgT+14,VH-mrgB-14);
+    const teks='💀'+Math.round(d/16)+'m';
+    const w=ctx.measureText(teks).width+12;
+    ctx.globalAlpha=d<760?0.95:0.75;
+    ctx.fillStyle='rgba(10,14,7,.88)';ctx.fillRect(lx-w/2,ly-11,w,22);
+    ctx.strokeStyle=kl;ctx.lineWidth=d<760?2.4*puls+0.8:1.8;ctx.strokeRect(lx-w/2,ly-11,w,22);
+    ctx.fillStyle=kl;ctx.fillText(teks,lx,ly+1);
+    ctx.globalAlpha=1;
+  }
+  ctx.textBaseline='alphabetic';
+  ctx.restore();
+}
+
+/* ============================== BEGIN / STOOR ============================== */
+function nesRy(n){return [Math.round(n.x),Math.round(n.y),n.band,n.vlak,Math.round(n.hp),
+                          Math.round(n.ryp),n.ni,Math.round(n.broeiT),n.gesien?1:0];}
+function nesBegin(){
+  if(S.komGr===undefined)S.komGr=0;
+  if(S.nesRoem===undefined)S.nesRoem=0;
+  if(S.nesRou===undefined)S.nesRou=0;
+  nesSaaiT=4*VOLLEDAG;
+  if(S.neste&&S.neste.length){
+    for(const r of S.neste){
+      const [x,y,band,vlak,hp,ryp,ni,broeiT,gesien]=r;
+      if(!NES_BANDE[band])continue;
+      const n=nuweNes(x,y,band,ni||0);
+      n.vlak=clamp(vlak||1,1,NES_MAKSVLAK);
+      n.hp=Math.min(hp||nesMaksHp(n),nesMaksHp(n));
+      n.ryp=ryp||0;n.broeiT=broeiT||NES_BANDE[band].broei;n.gesien=gesien||0;
+      NESTE.push(n);
+      nesNaamI=Math.max(nesNaamI,(ni||0)+1);
+    }
+  }
+  if(!NESTE.length)saaiNeste();
+  nesHudBou();nesHud();
+}
+
+/* ---- NESTE deur die REGISTERS ---- */
+const T_NES=verwerId(tekenNes);             // eie verwer-nommer; nooit 'n hardgekodeerde 6
+GLBRONNE.push(rye=>nesGelukRye(rye));       // dreiging/roem/rou as rye, met kategorieë
+
 /* ============================== BEGIN ============================== */
 bakTerrein();kamBegin();
 // herstel gestoorde geboue
@@ -3594,6 +4288,7 @@ if(!S.geb||!S.geb.length){
   }
   for(let i=0;i<5;i++)VRAGTE.push({x:1520+rand(-30,220),y:1230+rand(0,60),soort:'hout',geëis:0});
 }
+nesBegin();
 bemanGeboue();bouBalk();
 herstelKrygsmag();
 requestAnimationFrame(raam);
