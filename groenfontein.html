@@ -55,6 +55,25 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
 #glkaart .r span:last-child{font-variant-numeric:tabular-nums}
 #glkaart .op{color:var(--groen)} #glkaart .af{color:var(--rooi)}
 
+/* --- die belasting-tabel: die humeur-kaart se spieël, dus regs i.p.v. links --- */
+#belkaart{position:fixed;top:44px;right:8px;z-index:7;background:var(--paneel);
+  border:3px solid var(--lyn);box-shadow:0 0 0 3px #0a0e07;padding:12px 14px;
+  font-size:19px;display:none;min-width:250px;max-width:82vw}
+#belkaart h4{font-family:'Press Start 2P',monospace;font-size:10px;color:var(--goud);
+  letter-spacing:1px;margin-bottom:9px}
+#belkaart .br{display:flex;justify-content:space-between;gap:12px;align-items:center;
+  padding:8px;margin:2px -5px;border:2px solid transparent;cursor:pointer;
+  min-height:44px;font-variant-numeric:tabular-nums}
+#belkaart .br:active{background:var(--paneel2)}
+#belkaart .br.aan{border-color:var(--goud);background:var(--paneel2)}
+#belkaart .br .g{color:var(--goud)}
+#belkaart .br .h{color:var(--rooi)}
+#belkaart .br .h.op{color:var(--groen)}
+#belkaart .vt{color:var(--dof);font-size:17px;margin-top:8px;line-height:1.3;
+  border-top:2px solid var(--lyn);padding-top:7px}
+#hud .b.gd{cursor:pointer;pointer-events:auto}
+@media(max-width:560px){#belkaart{font-size:17px;min-width:0;left:8px;right:8px;max-width:none}
+  #belkaart .br{font-size:17px}}
 #prompt{position:fixed;left:50%;bottom:112px;transform:translateX(-50%);z-index:6;
   background:var(--paneel);border:3px solid var(--goud);box-shadow:0 0 0 3px #0a0e07;
   color:var(--goud);padding:8px 16px;font-size:20px;display:none;pointer-events:none;
@@ -89,12 +108,14 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <div class="b">🪨 <b id="hKlip">0</b></div>
   <div class="b">🥔 <b id="hKos">0</b></div>
   <div class="b" id="hSoorte" title="Kossoorte op die tafel">—</div>
+  <div class="b gd" id="hGoudB" style="display:none">🪙 <b id="hGoud">0</b></div>
   <div class="b">👥 <b id="hPop">0</b><span class="dof" id="hBed"></span></div>
   <div class="b gl" id="hGeluk">🙂 <b id="hGl">50</b></div>
   <div id="dagwys">Dag 1</div>
   <a id="terug" href="index.html" title="Terug na Drie Broers">&larr;</a>
 </div>
 <div id="glkaart"><h4>DIE MENSE SE HUMEUR</h4><div id="glrye"></div></div>
+<div id="belkaart"><h4>BELASTING</h4><div id="belrye"></div></div>
 <div id="gebkaart"><h4 id="gkNaam">GEBOU</h4><div id="gkRye"></div>
   <button class="kn" id="gkOpg" style="margin-top:8px;width:100%"></button></div>
 <div id="prompt"></div>
@@ -134,7 +155,8 @@ const KLIPBANK={x:1080,y:1720,r:120};      // die koppie se voet — waar klip g
 
 /* ============================== STOOR ============================== */
 const GF_KEY='gf_v2';
-let S={v:2,hout:0,klip:0,kos:6,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0,geluk:50,rant:2};
+let S={v:2,hout:0,klip:0,kos:6,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0,geluk:50,rant:2,
+       goud:0,bel:1};   // goud = WERF-geld (belasting/mark); munte (lopies) bly in index.html en koop net die broers
 try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object'&&s.v===2)S=Object.assign(S,s);}catch(e){}
 let persistT=0;
 function persist(){
@@ -191,6 +213,8 @@ const GT={
              help:'Die bakker stook een hout per baksel. Brood is duur, maar dit tel.'},
   spens:    {naam:'Spens',        ikoon:'🧺', koste:{hout:6,klip:1},   w:70, h:58, spens:true,
              help:'Kos hou langer. Die braai vat hier.'},
+  skathuis: {naam:'Skathuis',     ikoon:'🪙', koste:{hout:6,klip:5},   w:66, h:56, skat:true,
+             help:'Hier bêre jy goud. Eers dan kan jy belasting vra.'},
   braai:    {naam:'Braaiplek',    ikoon:'🔥', koste:{hout:4,klip:2},   w:58, h:48, braai:true,
              help:'Elke skemer brand hy. Almal se humeur lig.'},
   wagtoring:{naam:'Wagtoring',    ikoon:'🗼', koste:{hout:6,klip:4},   w:50, h:50, lig:true,
@@ -207,7 +231,7 @@ const GT={
              mkleur:['#8a7658','#54432b','#b19a63'],
              help:'Mense stap deur. Dwalers nie. Sonder hom klim hulle oor.'},
 };
-const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','braai','wagtoring',
+const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','skathuis','braai','wagtoring',
                'palissade','klipmuur','hekhuis'];
 const ST_N=5;                                   // vyf sigbare stadiums
 function stKoste(t){                            // hoeveel vragte moet aangedra word
@@ -309,6 +333,7 @@ function tel(tipe){let n=0;for(const g of GEB)if(g.tipe===tipe&&g.klaar)n++;retu
 function beddens(){let n=0;for(const g of GEB)if(g.klaar&&GT[g.tipe].bed)n+=gBed(g);return n;}
 function hetSpens(){return tel('spens')>0;}
 function braaiPlek(){for(const g of GEB)if(g.klaar&&GT[g.tipe].braai)return g;return null;}
+function skathuisPlek(){for(const g of GEB)if(g.klaar&&GT[g.tipe].skat)return g;return null;}
 
 /* ============================== BOME ============================== */
 const BOME=[];
@@ -657,6 +682,10 @@ function soekTaak(m){
       return {tipe:'delf',fase:0};
     }else if(w==='kos'){
       return {tipe:'oes',fase:0,g:m.werkplek};
+    }else if(w==='dril'){
+      /* Die drilmeester werk nie met hout of klip nie; hy STAAN op die werf. Sonder
+         hierdie tak val hy deur en gaan kap bome — en die opleiding staan stil. */
+      return {tipe:'dril',g:m.werkplek};
     }
   }
   // 5. enige gemerkte boom (die speler se handmerk)
@@ -918,6 +947,27 @@ function mensTik(m,dt){
       }
     }
     break; }
+  case 'dril': {
+    const g=t.g;
+    if(!g||!g.klaar||m.werkplek!==g){m.taak=null;break;}
+    if(t.tx===undefined){t.tx=g.x+rand(-32,32);t.ty=g.y+GT[g.tipe].h/2+rand(16,32);}
+    if(stapNa(m,t.tx,t.ty,dt)){
+      t.werk=(t.werk||0)+dt;
+      m.slaan+=dt;
+      const oefen=g.tou&&g.tou.length&&g.tou[0].staat==='oefen';
+      if(m.slaan>=1.1){m.slaan=0;m.rig=-m.rig;                 // hy draai om en bulder weer
+        if(oefen){spanne(m.x,m.y-26,2,'#c9b06a');m.sê=.8;}}
+      if(t.werk>=7){t.werk=0;t.tx=undefined;}                  // hy stap die werf deur
+    }
+    break; }
+  case 'aanmeld': {
+    /* Die prys stap self kaserne toe. Kanselleer die speler intussen, val die taak
+       skoon weg (die bevel is nie meer voor in die tou nie). */
+    const g=t.g, o=t.orde;
+    if(!g||!g.klaar||!o||!g.tou||g.tou.indexOf(o)!==0||o.staat!=='werf'){m.taak=null;break;}
+    if(t.tx===undefined){t.tx=g.x+rand(-10,10);t.ty=g.y+GT[g.tipe].h/2+6;}
+    if(stapNa(m,t.tx,t.ty,dt))meldAan(m,g,o);
+    break; }
   }
 }
 /* Werkplekke neem mense in diens: die naaste werklose kry die pos. */
@@ -966,7 +1016,8 @@ let GLRYE=[];
    (b) 'n KLEM PER KATEGORIE voor die som — geriewe DING MEE in plaas van stapel, sodat die
        speler kies watter gerief hy bou, en die dagstap self is geklem. */
 const GLBRONNE=[];
-const GLKAT={kos:[-10,8], dak:[-8,2], gerief:[-6,8], veiligheid:[-9,4], gebeurtenis:[-8,6]};
+const GLKAT={kos:[-10,8], dak:[-8,2], gerief:[-6,8], veiligheid:[-9,4], gebeurtenis:[-8,6],
+             belasting:[-15,5]};   // 'n HEFBOOM, nie 'n gerief: hy hou sy volle swaai
 const GLSTAP=14;                                   // maksimum |dryf| per dag
 function gelukFaktore(){
   const rye=[];
@@ -1017,6 +1068,15 @@ function gelukSom(rye){
 /* KOS-VERSKEIDENHEID — Stronghold se tweede kos-hefboom: nie MEER kos nie, MEER SOORTE.
    Deur die register, in kategorie 'kos', sodat dit binne die kos-klem [-10,+8] meeding
    en nie bo-op die rantsoen-bonus stapel nie. */
+/* BELASTING — die rantsoen se spieël: dieselfde skaal, teenoorgestelde teken. Net as 'n
+   skathuis staan; sonder hom bestaan die hefboom nog nie. */
+GLBRONNE.push(rye=>{
+  if(!skathuisPlek())return;
+  const b=belKeuse();
+  if(b.tarief<0&&(S.goud||0)<=0)rye.push(['Skathuis leeg — geen geskenk',0,'belasting']);
+  else if(b.gl!==0)rye.push(['Belasting: '+b.naam,b.gl,'belasting']);
+  else rye.push(['Geen belasting',0,'belasting']);
+});
 GLBRONNE.push(rye=>{const vr=kosVariasieRy(hongerTel||hongerVorige,voorraad('kos'));if(vr)rye.push([vr[0],vr[1],'kos']);});
 function dagDryf(){                       // een keer per spel-dag
   const som=gelukFaktore();
@@ -1078,6 +1138,73 @@ addEventListener('pointerdown',()=>{try{if(!AC)AC=new (window.AudioContext||wind
 
 /* ============================== DAG EN NAG ============================== */
 const DAGLENGTE=180, NAGLENGTE=60, VOLLEDAG=DAGLENGTE+NAGLENGTE;
+
+/* ============================== BELASTING EN GOUD ==============================
+   DIE TWEEDE HEFBOOM, en die presiese spieël van die rantsoen.
+     Rantsoen : jy gee KOS weg en KOOP humeur.
+     Belasting: jy vat GOUD en BETAAL met humeur.
+   Saam is hulle die enigste twee knoppies wat elke dag saak maak. Hulle koppel
+   ook aan mekaar: die enigste manier om Hoog of Wreed te oorleef is om die
+   humeur elders terug te koop — Ekstra rantsoene, 'n braai, dakke, 'n wagtoring
+   — en Ekstra rantsoene kos kos. Belasting word dus in kos betaal, met 'n
+   omweg. Dis die hele spel in twee knoppies.
+
+   HOEKOM TWEE GELDEENHEDE, EN HOE HULLE NIE VERWAR NIE:
+     goud  — verdien deur die MENSE hier op die werf. Bou en opgradeer die
+             landgoed. Woon in die HUD bo-links saam met hout/klip/kos.
+     munte — buit uit die zombie-lopies. Roep die BROERS op en herleef hulle.
+             Kom NOOIT in die landgoed-HUD nie en koop nooit 'n gebou nie.
+   Die reël wat hulle skei is 'n PLEK-reël, nie 'n dissipline nie: goud is 'n
+   werf-hulpbron (HUD), munte is 'n held-hulpbron (die broers se paneel). Twee
+   bronne, twee plekke, twee werkwoorde — 'koop' teenoor 'roep op'. 'n Speler
+   wat munte in die HUD gaan soek, kry hulle nooit, en leer die skeiding binne
+   een sessie. Die kode dwing dit af: goud gaan net deur goudBy/betaalGoud,
+   munte net deur muntBy/betaalMunt, en 'goud' is NOOIT 'n VRAGTE-soort nie
+   (hout|klip|kos bly die enigste drabare vragte).
+
+   YKING, geanker aan die bestaande kos-yking: 'n dag is VOLLEDAG=240s en een
+   mens eet 4 kos/dag op Normaal. Omdat GOUDDREMPEL === VOLLEDAG lees `tarief`
+   REGSTREEKS as goud per mens per dag — verander die daglengte ooit, dan bly
+   elke getal in hierdie tabel korrek sonder om een van hulle te roer. */
+const BELASTING=[
+  {naam:'Geskenk',tarief:-0.5,gl: +5,wenk:'Jy deel uit die kis uit. Dit koop humeur terug.'},
+  {naam:'Geen',   tarief: 0,  gl:  0,wenk:'Niemand betaal ’n sent nie.'},
+  {naam:'Laag',   tarief: 0.6,gl: -2,wenk:'Hulle brom, en hulle betaal.'},
+  {naam:'Normaal',tarief: 1.2,gl: -5,wenk:'Die gewone tiende. ’n Braai dra dit maklik.'},
+  {naam:'Hoog',   tarief: 2.0,gl: -9,wenk:'Vat ’n braai én ekstra rantsoene om te dra.'},
+  {naam:'Wreed',  tarief: 3.0,gl:-15,wenk:'Net vir ’n noodgeval. Hulle sal begin loop.'},
+];
+const BEL_GEEN=1;                  // verstek-indeks (S.bel); Geskenk sit voor hom
+const GOUDDREMPEL=VOLLEDAG;        // een dag se tarief = een goud per mens
+let goudKlok=0;
+
+/* Die skathuis is die goud se LYF. Sonder hom is daar geen belasting nie — dis
+   wat goud 'n middelspel-sleutel maak in plaas van dag-een-agtergrondruis, en
+   dit hou die vroeë spel presies soos hy nou geyk is (hout, kos, humeur). */
+function belKeuse(){return BELASTING[clamp(S.bel|0,0,BELASTING.length-1)];}
+function belVlak(){                          // die vlak wat WERKLIK geld
+  if(!skathuisPlek())return BELASTING[BEL_GEEN];
+  const b=belKeuse();
+  /* 'n Leë kis kan nie uitdeel nie — presies soos 'n leë spens nie kan voer nie.
+     Ons lees die rak regstreeks (nie 'n misgeloop-teller soos honger nie), want
+     goud op Geskenk beweeg net EEN kant toe en flikker dus nooit. */
+  if(b.tarief<0&&(S.goud||0)<=0)return BELASTING[BEL_GEEN];
+  return b;
+}
+function belGoudPerDag(){return Math.round(belVlak().tarief*MENSE.length);}
+
+/* Die enigste twee deure na die twee geldeenhede. Hou hulle apart. */
+function goudBy(n){S.goud=Math.max(0,(S.goud||0)+n);persistSoon();}
+function kanGoud(n){return (S.goud||0)>=n;}
+function betaalGoud(n){if(!kanGoud(n))return false;goudBy(-n);klank(760,.09,.12);return true;}
+/* Munte (lopies) het GEEN deur hier nie: hulle woon in index.html se stoor en koop net die broers. */
+/* DIE GRONDREËL: geen getal verander sonder dat 'n lyf beweeg nie. 'n Muntstuk
+   VLIEG dus sigbaar van die betaler na die skathuis, en S.goud skuif eers as hy
+   LAND. By 'n Geskenk trek ons wel by die VERTREK af — jy kan nie goud belowe
+   wat nie in die kis is nie. */
+const MUNTVLUG=[];
+function muntVlieg(x0,y0,x1,y1,rig){MUNTVLUG.push({x0,y0,x1,y1,t:0,dur:.75+R()*.3,rig});}
+
 let BRAAI_AAN=false;
 function nagAlpha(){
   const t=S.tyd%VOLLEDAG;
@@ -1148,6 +1275,8 @@ function bouBalk(){
     ok.onclick=bevestigBou;r.appendChild(ok);
     const nee=document.createElement('button');nee.className='kn rooi';nee.textContent='✗';
     nee.onclick=()=>{PLAAS=null;wysPrompt(null);bouBalk();};r.appendChild(nee);
+  }else if(GEKIES&&GEKIES.tipe==='kaserne'&&GEKIES.klaar){
+    kasBalkRy(r);
   }else{
     const mk=document.createElement('button');
     mk.className='kn'+(MODUS==='merk'?' aan':'');mk.textContent='🪓 Merk bome';
@@ -1166,6 +1295,19 @@ function bouBalk(){
     rt.onclick=()=>{S.rant=(S.rant+1)%RANTSOEN.length;persistSoon();bouBalk();
       plToast('Rantsoene: '+RANTSOEN[S.rant].naam);};
     r.appendChild(rt);
+    /* DIE BELASTING-HEFBOOM — hy staan langs die rantsoen-knoppie omdat hulle
+       mekaar se spieël is en die speler hulle saam moet lees. */
+    const sk=skathuisPlek(), BV=belKeuse();
+    const bgd=Math.round(BV.tarief*MENSE.length);
+    const bt=document.createElement('button');
+    bt.className='kn'+(sk?'':' kan_nie');
+    bt.innerHTML='🪙 '+(sk?BV.naam:'Belasting')+'<small>'+
+      (sk?((BV.tarief===0?'—':(bgd>0?'+'+bgd:''+bgd)+' g/dag')+' · '+(BV.gl>0?'+':'')+BV.gl+' humeur')
+         :'Bou ’n skathuis')+'</small>';
+    bt.onclick=()=>{
+      if(!sk){plToast('Jy kort ’n skathuis.');return;}
+      document.getElementById('glkaart').style.display='none';wysBelkaart();};
+    r.appendChild(bt);
     const pf=document.createElement('button');pf.className='kn'+(METE?' aan':'');pf.textContent='meet';
     pf.onclick=()=>{METE=!METE;mTye=[];document.getElementById('perf').style.display=METE?'block':'none';bouBalk();};
     r.appendChild(pf);
@@ -1184,6 +1326,47 @@ document.getElementById('hGeluk').onclick=()=>{
   document.getElementById('glrye').innerHTML=h;
   k.style.display='block';
 };
+
+/* Ses vlakke is te veel om deur te tik (die rantsoen se vyf is reeds die grens),
+   dus wys ons die hele tabel en laat die speler kies. Elke ry wys wat DIE DORP
+   SOOS HY NOU IS sou betaal — 'n tarief van 1.2 sê niks vir 'n mens nie, "+12
+   goud/dag" sê alles. Groot rye, want dis 'n foon. */
+function wysBelkaart(aan){
+  const k=document.getElementById('belkaart');
+  if(aan===false||(aan===undefined&&k.style.display==='block')){k.style.display='none';return;}
+  const pop=MENSE.length;
+  let h='';
+  if(!skathuisPlek()){
+    h='<div class="vt" style="border:0;margin:0;padding:0">Bou eers ’n 🪙 <b>Skathuis</b>.<br>'+
+      'Sonder ’n plek om goud te bêre, vra jy niks.</div>';
+  }else{
+    BELASTING.forEach((b,i)=>{
+      const gd=Math.round(b.tarief*pop);
+      const gt=b.tarief===0?'—':(gd>0?'+'+gd:''+gd)+' goud/dag';
+      const ht=(b.gl>0?'+':'')+b.gl;
+      h+='<div class="br'+(clamp(S.bel|0,0,BELASTING.length-1)===i?' aan':'')+'" data-i="'+i+'">'+
+         '<span>'+b.naam+'</span>'+
+         '<span><span class="g">'+gt+'</span> · '+
+         '<span class="h'+(b.gl>=0?' op':'')+'">'+ht+' humeur</span></span></div>';
+    });
+    h+='<div class="vt">'+belKeuse().wenk+'<br>'+
+       pop+' mense betaal · humeur skuif een keer per dag.</div>';
+  }
+  document.getElementById('belrye').innerHTML=h;
+  k.style.display='block';
+  for(const el of k.querySelectorAll('.br'))el.onclick=()=>{
+    S.bel=+el.dataset.i;
+    goudKlok=0;                       // 'n nuwe vlak begin met 'n skoon klok
+    persistSoon();
+    plToast('Belasting: '+belKeuse().naam);
+    klank(belKeuse().tarief>0?640:480,.09,.11);
+    if(!S.eersteBel&&belKeuse().tarief>0){S.eersteBel=1;
+      paSê('Vra wat jy moet — maar hou daai braai brand.');}
+    bouBalk();wysBelkaart(true);
+  };
+}
+document.getElementById('hGoudB').onclick=()=>{
+  document.getElementById('glkaart').style.display='none';wysBelkaart();};
 
 /* ============================== INSETTE ============================== */
 let MODUS=null;
@@ -1370,6 +1553,7 @@ function gebOnder(wx,wy){
 }
 function kiesGebou(g){
   GEKIES=g;
+  bouBalk();   // die kaserne se krygsry leef in die balk, nie in die gebou-kaart nie
   const kaart=document.getElementById('gebkaart');
   if(!g){kaart.style.display='none';return;}
   const G2=GT[g.tipe], v=gVlak(g), maks=maxVlak(g.tipe);
@@ -1378,6 +1562,9 @@ function kiesGebou(g){
   const rye=[];
   if(G2.bed)rye.push(['Beddens',gBed(g)]);
   if(G2.werk)rye.push(['Werkplekke',g.werkers.length+'/'+gPlekke(g)]);
+  if(G2.kaserne){rye.push(['Soldate',EENHEDE.length+'/'+kooieTotaal()]);
+    rye.push(['Oefentou',(g.tou&&g.tou.length)?g.tou.length+' in die ry':'leeg']);
+    if(g.stil)rye.push(['Staan stil',g.stil]);}
   if(g.tipe==='houthut')rye.push(['Kap-bereik',Math.round(gBereik(g))+' tree']);
   if(G2.braai||G2.lig)rye.push(['Humeur',(gGl(g)>0?'+':'')+gGl(g)+' per dag']);
   if(!g.klaar)rye.push([g.opgradeer?'Word opgegradeer':'Word gebou',
@@ -1403,9 +1590,22 @@ document.getElementById('gkOpg').onclick=()=>{
 
 function tik(wx,wy){
   document.getElementById('glkaart').style.display='none';
+  document.getElementById('belkaart').style.display='none';
   if(PLAAS&&GT[PLAAS].muur){muurKlik(wx,wy);return;}   // muur: tik begin, dan einde
   if(PLAAS){SPOOK.x=wx;SPOOK.y=wy;return;}          // plasing: tik verskuif die spook
   if(dist2(wx,wy,KLOKPAAL.x+7,KLOKPAAL.y+14)<52*52){luiKlok();bouBalk();return;}
+  if(MODUS==='rally'){                       // uitdruklike modus wen, soos merk en plasing
+    S.rally={x:Math.round(wx),y:Math.round(wy)};
+    MODUS=null;wysPrompt(null);bouBalk();persistSoon();
+    klank(560,.08,.1);spanne(wx,wy,8,'#c05038');plToast('Versamelpunt gestel.');
+    return;
+  }
+  {
+    const sk=skathuisPlek();
+    if(sk&&Math.abs(wx-sk.x)<GT.skathuis.w/2+14&&Math.abs(wy-sk.y)<GT.skathuis.h/2+14){
+      wysBelkaart(true);return;
+    }
+  }
   if(MODUS!=='merk'){
     const g=gebOnder(wx,wy);
     kiesGebou(g);                                    // null sluit die paneel
@@ -1439,6 +1639,7 @@ function update(dt){
 
   mureTik(dt);                     // die muur-indeks moet VARS wees voor mensTik loop
   for(const m of MENSE)mensTik(m,dt);
+  krygsmagTik(dt);   // kasernes, oefentou, eenhede
   gelukFaktore();                  // hou die kaart vars; die DRYF gebeur per dag
 
   /* DIE KOS-KLOK — 'n akkumulator wat EEN eenheid op 'n slag laat val, sodat die
@@ -1463,6 +1664,39 @@ function update(dt){
           if(m)spanne(m.x,m.y-16,2,'#7fc95e');}
         else hongerTel++;              // 'n maaltyd wat NIE gebeur het nie
       }
+    }
+  }
+
+  /* DIE GOUD-KLOK — dieselfde akkumulator-vorm as die kos-klok, sodat die twee
+     hefbome dieselfde ritme deel en 'n leser wat een verstaan, die ander gratis
+     kry. Ons wissel op belVlak(), nie op belKeuse(), sodat 'n leë kis op
+     Geskenk stil staan in plaas daarvan om skuld op te bou. */
+  {
+    const sk=skathuisPlek(), b=belVlak();
+    if(sk&&MENSE.length&&b.tarief!==0){
+      goudKlok+=dt*MENSE.length*b.tarief;
+      while(goudKlok>=GOUDDREMPEL){          // belasting IN
+        goudKlok-=GOUDDREMPEL;
+        const m=MENSE[(R()*MENSE.length)|0];
+        muntVlieg(m?m.x:sk.x, m?m.y-18:sk.y, sk.x, sk.y-10, +1);
+      }
+      while(goudKlok<=-GOUDDREMPEL){         // geskenk UIT
+        goudKlok+=GOUDDREMPEL;
+        if((S.goud||0)>0){
+          goudBy(-1);                        // reserveer by vertrek, nie by aankoms nie
+          const m=MENSE[(R()*MENSE.length)|0];
+          muntVlieg(sk.x, sk.y-10, m?m.x:sk.x, m?m.y-18:sk.y, -1);
+        }else{goudKlok=0;break;}
+      }
+    }else goudKlok=0;                        // geen skathuis / geen belasting: geen skuld
+  }
+  /* Munte in die lug. Die telling skuif hier — by die LANDING, nie by die vra nie. */
+  for(let i=MUNTVLUG.length-1;i>=0;i--){
+    const c=MUNTVLUG[i];c.t+=dt;
+    if(c.t>=c.dur){
+      if(c.rig>0){goudBy(1);spanne(c.x1,c.y1,4,'#e0b64f');klank(1180,.07,.09);}
+      else spanne(c.x1,c.y1,3,'#e0b64f');
+      MUNTVLUG.splice(i,1);
     }
   }
 
@@ -1589,6 +1823,14 @@ function update(dt){
   document.getElementById('hHout').textContent=voorraad('hout');
   document.getElementById('hKlip').textContent=voorraad('klip');
   document.getElementById('hKos').textContent=voorraad('kos');
+  {
+    /* Die goud-blokkie verskyn eers saam met die skathuis. Voor dit is dit 'n
+       nul wat niks beteken nie, en die HUD is foon-eerste — elke blokkie moet
+       sy plek verdien. */
+    const gb=document.getElementById('hGoudB');
+    gb.style.display=skathuisPlek()?'block':'none';
+    document.getElementById('hGoud').textContent=S.goud||0;
+  }
   {const st=kosSoorteOpTafel(), e=document.getElementById('hSoorte');
    /* Die strokie is die enigste plek waar die speler die soorte SIEN sonder om
       die humeur-kaart oop te maak — daarom die dowwe kleur by een soort. */
@@ -2210,7 +2452,8 @@ function tekenGebou(g){
     houthut:['#7d5b45','#5b4133','#8a7658'],klipgroef:['#8c8477','#6d675c','#9aa0a2'],
     tuin:['#4f7434','#3d5c2a','#8a6f3f'],spens:['#b9a06a','#8a7648','#c9c0aa'],
     braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2'],
-    hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa']}[g.tipe]
+    hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa'],
+    skathuis:['#b9a06a','#7a6a3f','#8c8477']}[g.tipe]
     ||['#8a7658','#6f5c44','#c9c0aa'];
   /* Beter materiaal: die muur word gekalk, die dak word dikker gedek. Een meng,
      geen tweede palet om uit pas te raak nie. */
@@ -2307,6 +2550,17 @@ function tekenGebou(g){
       const by=(g.tipe==='wagtoring')?yT-34-16:yr-2;
       tekenBanier(bx,by,'#c05038',saad);
     }
+  }
+  if(g.klaar&&g.tipe==='skathuis'){
+    /* Die kis groei sigbaar met die skat. Dis die enigste plek op die kaart waar
+       goud lê — munte lê nêrens, want munte hoort nie aan die plaas nie. */
+    const bx=x+w*.15, by=y+h-wh*.46;
+    ctx.fillStyle='#5d4a2c';ctx.fillRect(bx,by,22,13);
+    ctx.fillStyle='#3c2f1b';ctx.fillRect(bx,by,22,4);
+    const n=Math.min(6,Math.ceil((S.goud||0)/12));
+    ctx.fillStyle='#e0b64f';
+    for(let i=0;i<n;i++)ctx.fillRect(bx+3+(i%3)*6,by-3-((i/3)|0)*3,5,3);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;ctx.strokeRect(bx,by,22,13);
   }
   if(g.klaar&&g.tipe==='hoenderhok'){            // 'n paar hoenders in die hok
     for(let i=0;i<4;i++){
@@ -2740,6 +2994,7 @@ function render(){
   for(const m of MENSE)if(vis(m.x,m.y,50))dinge.push([m.y,2,m]);
   for(const h of HOENDERS)if(vis(h.x,h.y,20))dinge.push([h.y,3,h]);
   for(const d of DWALERS)if(vis(d.x,d.y,40))dinge.push([d.y,4,d]);
+  verfLys(dinge);   // eenhede + die kaserne se oorlaag, y-gesorteer saam met die res
   dinge.push([PA.y,5,PA]);
   dinge.sort((a,b)=>a[0]-b[0]);
   for(const [,t,d] of dinge)VERWERS[t](d);   // sien VERWERS hieronder
@@ -2755,6 +3010,16 @@ function render(){
     ctx.beginPath();ctx.moveTo(KLOKPAAL.x+7,KLOKPAAL.y+6);ctx.lineTo(KLOKPAAL.x,KLOKPAAL.y+22);
     ctx.lineTo(KLOKPAAL.x+14,KLOKPAAL.y+22);ctx.closePath();ctx.fill();
     ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+  }
+  // goud onderweg — die telling skuif eers wanneer een land
+  for(const c of MUNTVLUG){
+    const f=c.t/c.dur;
+    const x=c.x0+(c.x1-c.x0)*f, y=c.y0+(c.y1-c.y0)*f-Math.sin(f*Math.PI)*22;
+    if(!vis(x,y,30))continue;
+    const sp=Math.max(.18,Math.abs(Math.cos(f*13)));      // hy tol in die lug
+    ctx.fillStyle='#e0b64f';ctx.fillRect(x-3*sp,y-3,6*sp,6);
+    ctx.fillStyle='#fff0bd';ctx.fillRect(x-3*sp,y-3,Math.max(1,2*sp),2);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.2;ctx.strokeRect(x-3*sp,y-3,Math.max(1.6,6*sp),6);
   }
   for(const r of ROOK){
     const f=r.t/r.life;
@@ -2802,6 +3067,482 @@ function render(){
     ctx.globalAlpha=1;
   }
 }
+
+/* ============================================================================
+   DIE KASERNE EN DIE KRYGSMAG — die AoE-kant van 'n Stronghold-plaas.
+
+   PLASING: plak hierdie hele blok as EEN stuk net BO die reël
+   `/* ============================== LUS ============================== *​/`
+   (d.w.s. ná vlakMerk/tekenHoop/render, voor function raam). Dit MOET op
+   topvlak loop voor die BEGIN-afdeling, want dit skryf GT.kaserne,
+   VLAKKE.kaserne en GT_ORDE in — dieselfde katalogus wat bouBalk() by die
+   begin lees.
+
+   DIE PRYS IS 'N MENS. Munte en tyd is die maklike helfte; die harde helfte is
+   dat 'n boer opstaan, sy taak los, na die kaserne stap en dáár uit MENSE
+   verdwyn. Daarom word die rekruut eers gewerf as sy bevel VOOR in die tou is —
+   'n ry van vier bevele mag nie jou hele werksmag in een oomblik afvee nie.
+   ============================================================================ */
+
+/* --- die katalogus-inskrywing. 14 vragte: die duurste ding op die werf, en dit
+   hoort so — dis die gebou wat jou boere in soldate verander. --- */
+GT.kaserne={naam:'Kaserne', ikoon:'⚔️', koste:{hout:9,klip:5}, w:96, h:74,
+            werk:'dril', plekke:1, kaserne:true,
+            help:'Een drilmeester lei soldate op. Elke soldaat is ’n boer minder.'};
+/* Kooie, nie beddens nie: soldate slaap in die kaserne en tel dus NIE in die
+   oorbevolking-ry nie. Die opgradering koop plek + ontsluit swaarder eenhede. */
+VLAKKE.kaserne=[{kooie:3},{kooie:5,koste:{hout:6,klip:5}},{kooie:8,koste:{hout:9,klip:8}}];
+/* voor die palissade in die winkel: die palissade is die laaste, goedkoopste ry */
+if(GT_ORDE.indexOf('kaserne')<0)GT_ORDE.splice(GT_ORDE.indexOf('palissade'),0,'kaserne');
+
+/* --- MUNTE. Die brug-geldeenheid: goud kom uit die zombie-lopies, nie uit die
+   plaas nie (geen AFK-inkomste). Tot die lopie-brug land, is Pa se koffieblik in
+   die ruïne die enigste bron: 40 munte, een keer, nooit weer nie. --- */
+/* GOUD: geen saad, geen eie deur. goudBy()/betaalGoud() en die HUD-blokkie behoort aan die
+   belasting-stelsel (S.goud = WERF-geld). Munte uit die lopies koop net die broers. */
+
+/* --- DIE EENHEDE. Vier statistieke wat saak maak: hoeveel hy vat (hp), hoeveel
+   hy uitdeel (skade/tempo), hoe ver (reik) en hoe vinnig (spd).
+   YKING teen die dwaler (18 hp, 4 skade/s in kontak):
+     Wagter  6 dps → dood in 3.0s, oorleef 8.5s kontak → wen 1v1 met marge.
+     Skut    3.9 dps op 190px → hy tref 4x voordat 'n dwaler (16px/s) hom raak.
+     Saagman 12.3 dps → dood in 1.5s, oorleef 11.5s → hy is die nes-breker.
+   Die goud/tyd-lyn is bewustelik steil: 12/24s, 22/34s, 38/50s. --- */
+const EENHEIDT={
+  wagter: {naam:'Wagter',  ikoon:'🛡️', goud:12, oefen:24, hp:34, skade:6,  tempo:1.0, reik:24,  spd:48, vlak:1,
+           wapen:'graaf',       help:'Graaf in die hand. Taai, stadig, goedkoop.'},
+  skut:   {naam:'Skut',    ikoon:'🔫', goud:22, oefen:34, hp:20, skade:7,  tempo:1.8, reik:190, spd:52, vlak:2,
+           wapen:'.22',         help:'Skiet ver met die .22. Hy breek maklik.'},
+  saagman:{naam:'Saagman', ikoon:'🪚', goud:38, oefen:50, hp:46, skade:16, tempo:1.3, reik:28,  spd:44, vlak:3,
+           wapen:'kettingsaag', help:'Kettingsaag. Duur, luidrugtig, dodelik.'},
+};
+const EENHEID_ORDE=['wagter','skut','saagman'];
+const EENHEDE=[];
+const EET_SOLDAAT=1.5;      // 'n soldaat eet meer as 'n boer en oes niks
+const KRYGS_MIN=3;          // onder drie boere mag jy niemand meer wegvat nie
+const KAS_TOU_MAKS=4;
+const WAAK=300;             // hoe ver van sy pos af 'n eenheid sal uitstap
+const DWALER_HP=18, DWALER_DPS=4;
+let rouTel=0, rouDag=0, eenhStoorT=0;
+
+/* --- klein lesings oor die krygsmag --- */
+function kasernes(){const a=[];for(const g of GEB)if(g.tipe==='kaserne'&&g.klaar)a.push(g);return a;}
+function kasKooie(g){const d=vDat('kaserne',gVlak(g));return (d&&d.kooie!==undefined)?d.kooie:3;}
+function kooieTotaal(){let n=0;for(const g of kasernes())n+=kasKooie(g);return n;}
+function besteKaserne(){let b=null;for(const g of kasernes())if(!b||gVlak(g)>gVlak(b))b=g;return b;}
+function kasVlak(){const b=besteKaserne();return b?gVlak(b):0;}
+function touLengte(){let n=0;for(const g of kasernes())n+=(g.tou?g.tou.length:0);return n;}
+/* MONDE, nie MENSE nie. Sonder hierdie funksie sou 'n soldaat se aanmelding die
+   spens se verbruik LAAT DAAL — soldate maak het jou dan ryker aan kos. Dit sou
+   die hele yking (een tuinier voed vier monde) op sy kop keer. */
+MONDBRONNE.push(()=>EENHEDE.length*EET_SOLDAAT);   // deur die register — nie 'n eie monde() nie
+function rallyPunt(){
+  if(S.rally)return S.rally;
+  const g=besteKaserne();
+  return g?{x:g.x,y:g.y+GT.kaserne.h/2+42}:{x:WERF.x,y:WERF.y+90};
+}
+function stoorEenhede(){
+  S.eenh=EENHEDE.map(e=>[e.tipe,Math.round(e.x),Math.round(e.y),Math.round(e.hp),e.naam]);
+  persistSoon();
+}
+
+/* --- 'n mens wat weggevat word, moet ALLES los waarop hy 'n eis het. Doen ons
+   dit nie, bly site.opPad vir ewig opgetel en die bousite wag vir hout wat nooit
+   kom nie (dieselfde starvation wat die vlug-kode moes regmaak). --- */
+function losAlleEise(m){
+  if(m.dra)losVrag(m);
+  const t=m.taak;
+  if(t){
+    if(t.tipe==='vat'&&t.site){
+      t.site.opPad--;
+      if(t.soort==='hout')t.site.opPadH--;else t.site.opPadK--;
+    }
+    if(t.tipe==='bou'&&t.site&&t.site.bouer===m)t.site.bouer=null;
+    if(t.tipe==='kap'&&t.boom)t.boom.geëis=Math.max(0,t.boom.geëis-1);  // die merk bly: die speler het hom gemerk
+  }
+  m.taak=null;
+  if(m.werkplek){
+    const i=m.werkplek.werkers.indexOf(m);
+    if(i>=0)m.werkplek.werkers.splice(i,1);
+    m.werkplek=null;
+  }
+}
+function kiesRekruut(g){
+  let beste=null,bd=1e12;
+  for(const m of MENSE){
+    if(m.werkplek&&m.werkplek.tipe==='kaserne')continue;    // die drilmeester werf nie homself nie
+    if(m.taak&&m.taak.tipe==='aanmeld')continue;
+    const d=dist2(m.x,m.y,g.x,g.y);
+    if(d<bd){bd=d;beste=m;}
+  }
+  return beste;
+}
+
+/* --- 'N BEVEL PLAAS. Munte word HIER afgetrek (anders staan 'n gratis ry van
+   vier), die lyf word eers gevat as die bevel voor in die tou kom. --- */
+function werfEenheid(tipe){
+  const E=EENHEIDT[tipe], g=besteKaserne();
+  if(!g){plToast('Bou eers ’n kaserne.');return false;}
+  if(gVlak(g)<E.vlak){plToast(E.naam+' vra ’n kaserne op vlak '+E.vlak+'.');klank(150,.16,.1);return false;}
+  g.tou=g.tou||[];
+  if(g.tou.length>=KAS_TOU_MAKS){plToast('Die oefentou is vol.');klank(150,.16,.1);return false;}
+  if(EENHEDE.length+touLengte()>=kooieTotaal()){
+    plToast('Geen kooi oop nie — gradeer die kaserne op.');klank(150,.16,.1);return false;}
+  if(MENSE.length-1<KRYGS_MIN){
+    plToast('Iemand moet die plaas aan die gang hou.');klank(150,.16,.1);return false;}
+  /* VLOEI-HEK: 'n soldaat eet 1.5 monde en oes niks. Sonder hierdie toets kan 'n speler
+     sy hele werksmag werf en die plaas verhonger sonder 'n pad terug. */
+  if(kosVloei()<(monde()+EET_SOLDAAT)*4+6){
+    plToast('Ons kan hom nie voed nie — bou eers ’n tuin.');klank(150,.16,.1);return false;}
+  if((S.goud||0)<E.goud){
+    plToast('Te min goud. Hef belasting by die skathuis.');klank(150,.16,.1);return false;}
+  goudBy(-E.goud);
+  g.tou.push({tipe,t:0,duur:E.oefen,staat:'werf',mens:null,pieper:0});
+  plToast(E.naam+' is op die oefenlys.');klank(360,.1,.12);
+  bouBalk();persistSoon();
+  return true;
+}
+/* Kanselleer die LAASTE bevel. Is dit een wat reeds oefen, kom die man terug
+   werf toe — 'n bevel wat jou lyf VIR ALTYD sluk sou 'n lokval wees, nie 'n
+   besluit nie. */
+function kanselleerLaaste(){
+  const g=besteKaserne();
+  if(!g||!g.tou||!g.tou.length){plToast('Niks om te kanselleer nie.');return;}
+  const o=g.tou.pop();
+  goudBy(EENHEIDT[o.tipe].goud);
+  if(o.mens){
+    if(o.staat==='oefen'){
+      const m=o.mens;
+      m.x=g.x+rand(-16,16); m.y=g.y+GT.kaserne.h/2+rand(10,20);
+      m.taak=null;m.dra=null;m.werkplek=null;
+      MENSE.push(m);bemanGeboue();
+      plToast(m.naam+' is terug op die land.');
+    }else if(o.mens.taak&&o.mens.taak.orde===o)o.mens.taak=null;
+  }
+  klank(200,.14,.1);stoorEenhede();bouBalk();persistSoon();
+}
+/* ONTBIND — die deur terug. Sonder dit is elke werwing eenrigting en die kenmerk 'n lokval. */
+function ontbindLaaste(){
+  const e=EENHEDE.pop(); if(!e){plToast('Geen soldate om te ontbind nie.');return;}
+  const m=maakMens(e.x,e.y); m.naam=e.naam; MENSE.push(m);
+  hervormEenhede(); bemanGeboue(); stoorEenhede();
+  plToast(e.naam+' is terug op die land.'); klank(260,.12,.1); bouBalk(); persistSoon();
+}
+/* Die oomblik van die prys: hy stap by die deur in en is uit die bevolking uit. */
+function meldAan(m,g,o){
+  const i=MENSE.indexOf(m); if(i>=0)MENSE.splice(i,1);
+  m.taak=null;m.dra=null;
+  o.mens=m;o.staat='oefen';o.t=0;
+  bemanGeboue();                       // sy ou werkplek moet iemand anders kry
+  plToast(m.naam+' het aangemeld — een paar hande minder op die land.');
+  paSê('Sterkte, '+m.naam.split(' ')[0]+'.');
+  klank(300,.16,.13);spanne(g.x,g.y+GT.kaserne.h/2,7,'#c05038');
+  bouBalk();persistSoon();
+}
+
+function nuweEenheid(tipe,x,y,mens){
+  const E=EENHEIDT[tipe];
+  return {tipe,naam:mens?mens.naam:volgendeNaam(),x,y,
+    hp:E.hp,maksHp:E.hp,skade:E.skade,tempo:E.tempo,reik:E.reik,spd:E.spd,
+    klr:mens?mens.klr:KLEURE[(R()*KLEURE.length)|0],
+    hare:mens?mens.hare:HARE[(R()*HARE.length)|0],
+    rig:1,tred:R()*TAU,slaan:0,herlaai:R()*.6,doel:null,
+    flits:0,skoot:0,skootX:0,skootY:0,pos:{x:0,y:0}};
+}
+/* Die gelid word na ELKE verandering herbereken sodat 'n dooie nie 'n gat in die
+   ry los nie — 'n ry met 'n gat lees soos 'n fout, nie soos 'n verlies nie. */
+function hervormEenhede(){
+  EENHEDE.forEach((e,i)=>{e.pos.x=((i%4)-1.5)*26; e.pos.y=Math.floor(i/4)*24;});
+}
+function eenheidGebore(tipe,g,mens){
+  const e=nuweEenheid(tipe,g.x+rand(-14,14),g.y+GT.kaserne.h/2+rand(8,18),mens);
+  EENHEDE.push(e);hervormEenhede();
+  plToast(EENHEIDT[tipe].naam+' '+e.naam+' is opgelei.');
+  paSê('Daar staan ’n man vir die werf.');
+  klank(700,.2,.14);spanne(e.x,e.y-14,10,'#e8c96a');
+  stoorEenhede();bouBalk();
+  return e;
+}
+function eenheidSterf(e){
+  const i=EENHEDE.indexOf(e); if(i>=0)EENHEDE.splice(i,1);
+  hervormEenhede();
+  rouTel++;                            // die dryf-model straf dit môre, nie nou nie
+  plToast(e.naam+' het geval.');paSê('Ons dra hom werf toe.');
+  spanne(e.x,e.y-12,14,'#c05038');klank(110,.35,.18);
+  stoorEenhede();bouBalk();
+}
+
+/* --- DIE KASERNE SE HARTSLAG: een bevel op 'n slag, en net terwyl die
+   drilmeester op die werf staan. --- */
+function kasTik(g,dt){
+  if(!g.klaar){g.stil=null;return;}
+  const tou=g.tou;
+  if(!tou||!tou.length){g.stil=null;return;}
+  const o=tou[0], E=EENHEIDT[o.tipe];
+  if(o.staat==='werf'){
+    if(o.mens&&!MENSE.includes(o.mens))o.mens=null;         // hy het geloop of geval
+    if(o.mens&&(!o.mens.taak||o.mens.taak.tipe!=='aanmeld'))o.mens.taak={tipe:'aanmeld',g,orde:o};
+    if(!o.mens){
+      const m=kiesRekruut(g);
+      if(!m){g.stil='Niemand kan aanmeld nie';return;}
+      losAlleEise(m);bemanGeboue();
+      m.taak={tipe:'aanmeld',g,orde:o};
+      o.mens=m;
+    }
+    g.stil=null;
+    return;                                                 // die klok loop eers as hy binne is
+  }
+  const dril=g.werkers.find(w=>w&&MENSE.includes(w)&&dist2(w.x,w.y,g.x,g.y)<190*190);
+  if(!dril){g.stil='Geen drilmeester nie';return;}
+  g.stil=null;
+  o.t+=dt;
+  o.pieper-=dt;
+  if(o.pieper<=0){o.pieper=3;klank(240+Math.round(o.t/o.duur*180),.05,.06);}
+  if(o.t>=o.duur){
+    tou.shift();
+    eenheidGebore(o.tipe,g,o.mens);
+  }
+}
+
+/* --- EENHEID-GEDRAG. Dit is die NAAT waar 'n latere bevel-/nes-stelsel inhaak:
+   alles wat 'n eenheid doen, loop deur bevelPunt() en eenheidVeg(). Vervang dié
+   twee en die res van hierdie lêer bly staan. --- */
+function bevelPunt(e){
+  const rp=rallyPunt();
+  return {x:rp.x+e.pos.x, y:rp.y+e.pos.y};
+}
+function eenheidVeg(e,dt){
+  const rp=rallyPunt();
+  let doel=null,bd=WAAK*WAAK;
+  for(const d of DWALERS){
+    if(d.dood||d.weg)continue;
+    if(dist2(d.x,d.y,rp.x,rp.y)>WAAK*WAAK)continue;         // hy verlaat nie sy pos vir 'n dwaler in die veld nie
+    const q=dist2(e.x,e.y,d.x,d.y);
+    if(q<bd){bd=q;doel=d;}
+  }
+  e.doel=doel;
+  if(!doel)return false;
+  if(bd>e.reik*e.reik){stapNa(e,doel.x,doel.y,dt);return true;}
+  e.rig=doel.x<e.x?-1:1;
+  e.tred+=dt*1.1;
+  if(e.herlaai>0)return true;
+  e.herlaai=e.tempo;
+  if(doel.hp===undefined)doel.hp=DWALER_HP;                 // dwalers kry hul hp eers hier — geen anker in maakDwaler
+  doel.hp-=e.skade;
+  e.slaan=1;
+  if(e.reik>60){e.skoot=.12;e.skootX=doel.x;e.skootY=doel.y-12;klank(920,.05,.09);}
+  else klank(230+R()*50,.06,.1);
+  spanne(doel.x+rand(-6,6),doel.y-12,3,'#c05038');
+  if(doel.hp<=0){
+    doel.dood=true;
+    spanne(doel.x,doel.y-10,13,'#6b8f3a');klank(120,.26,.16);
+    S.gedood=(S.gedood||0)+1;persistSoon();
+  }
+  return true;
+}
+function eenheidTik(e,dt){
+  if(e.flits>0)e.flits-=dt;
+  if(e.skoot>0)e.skoot-=dt;
+  if(e.herlaai>0)e.herlaai-=dt;
+  if(e.slaan>0)e.slaan-=dt*2.2;
+  const veg=eenheidVeg(e,dt);
+  if(!veg){
+    const p=bevelPunt(e);
+    if(!stapNa(e,p.x,p.y,dt))e.rig=e.rig;                   // stapNa doen die tred en die omleiding
+  }
+  /* Kontak sny. Sonder skade op die soldaat is 'n eenheid 'n gratis muur en die
+     hele koste-vraag verdamp. */
+  for(const d of DWALERS){
+    if(d.dood)continue;
+    if(dist2(d.x,d.y,e.x,e.y)<26*26){e.hp-=DWALER_DPS*dt;e.flits=.14;}
+  }
+  if(e.hp<=0)eenheidSterf(e);
+}
+/* Een enkele oproep vir update(): kasernes, eenhede, HUD en die stoor-klok. */
+function krygsmagTik(dt){
+  if(S.dag!==rouDag){rouDag=S.dag;rouTel=0;}                // dagDryf het die rou reeds ingereken
+  for(const g of GEB)if(g.tipe==='kaserne')kasTik(g,dt);
+  for(let i=EENHEDE.length-1;i>=0;i--)eenheidTik(EENHEDE[i],dt);
+  eenhStoorT-=dt;
+  if(eenhStoorT<=0){eenhStoorT=5;if(EENHEDE.length)stoorEenhede();}
+}
+/* Die twee humeur-rye. BEGRENS: 'n staande mag mag nooit 'n geluk-enjin word nie,
+   en 'n leër wat sy boere oortref, moet seer. */
+function krygsGeluk(rye){
+  const sold=EENHEDE.length;
+  if(sold){
+    const oor=sold-MENSE.length;
+    if(oor>0)rye.push(['Meer soldate as boere',-Math.min(6,2*oor),'gebeurtenis']);
+    else if(sold>=2)rye.push(['’n Wag op die werf',+1,'veiligheid']);
+  }
+  if(rouTel)rye.push([rouTel===1?'’n Soldaat het geval':rouTel+' soldate het geval',
+                      -Math.min(9,3*rouTel),'gebeurtenis']);
+}
+
+GLBRONNE.push(rye=>krygsGeluk(rye));
+
+/* ============================== VERF ============================== */
+const T_KRYG=verwerId(krygsVerf);   // eie verwer-nommer uit die register — nooit 'n hardgekodeerde 6
+function verfLys(dinge){
+  for(const e of EENHEDE)if(vis(e.x,e.y,60))dinge.push([e.y,T_KRYG,e]);
+  for(const g of GEB)if(g.tipe==='kaserne'&&vis(g.x,g.y,180))
+    dinge.push([g.y+GT.kaserne.h/2+1,T_KRYG,g]);                 // oorlaag NET ná die gebou self
+}
+function krygsVerf(d){
+  if(d.tipe==='kaserne')tekenKaserneOor(d);else tekenEenheid(d);
+}
+function tekenKaserneOor(g){
+  const r=gebRegs(g);
+  if(g.klaar){
+    // seil-strook + vlagpaal: sonder dit lees die kaserne op lae zoem soos 'n huis
+    ctx.fillStyle='#4e6b34';ctx.fillRect(r.x+2,r.y+r.h-14,r.w-4,5);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;ctx.strokeRect(r.x+2,r.y+r.h-14,r.w-4,5);
+    ctx.fillStyle='#4a3a22';ctx.fillRect(r.x+r.w-9,r.y-24,3,26);
+    ctx.fillStyle='#c05038';
+    ctx.beginPath();ctx.moveTo(r.x+r.w-6,r.y-24);ctx.lineTo(r.x+r.w+11,r.y-19);
+    ctx.lineTo(r.x+r.w-6,r.y-14);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.stroke();
+    // oefenpop op die werf
+    const px=r.x-14, py=r.y+r.h+12;
+    ctx.fillStyle='#5d4a2c';ctx.fillRect(px-2,py-16,4,16);
+    ctx.fillStyle='#8a7658';ctx.fillRect(px-7,py-24,14,10);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;ctx.strokeRect(px-7,py-24,14,10);
+  }
+  const tou=g.tou||[];
+  if(g.klaar&&tou.length){
+    const o=tou[0], w=r.w;
+    const p=o.staat==='oefen'?clamp(o.t/o.duur,0,1):0;
+    ctx.fillStyle='rgba(10,14,7,.8)';ctx.fillRect(r.x,r.y-24,w,9);
+    ctx.fillStyle=o.staat==='oefen'?'#c05038':'#9aa07f';
+    ctx.fillRect(r.x+1,r.y-23,(w-2)*p,7);
+    ctx.font='13px VT323,monospace';ctx.textAlign='left';
+    ctx.fillStyle='#ece5cc';
+    ctx.fillText(EENHEIDT[o.tipe].ikoon+(o.staat==='oefen'?'':' wag'),r.x+2,r.y-27);
+    for(let i=1;i<tou.length;i++){                          // die res van die tou as pitte
+      ctx.fillStyle='#9aa07f';ctx.fillRect(r.x+w-i*8,r.y-33,6,5);
+    }
+  }
+  if(g.klaar&&g.stil){
+    ctx.font='14px VT323,monospace';ctx.textAlign='center';
+    ctx.fillStyle='#e0b64f';ctx.fillText('⚠ '+g.stil,g.x,r.y-36);
+  }
+  if(GEKIES===g&&g.klaar){                                  // wys waarheen die mag marsjeer
+    const rp=rallyPunt();
+    ctx.strokeStyle='rgba(192,80,56,.7)';ctx.lineWidth=2;ctx.setLineDash([6,6]);
+    ctx.beginPath();ctx.moveTo(g.x,g.y+GT.kaserne.h/2);ctx.lineTo(rp.x,rp.y);ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle='#c05038';ctx.fillRect(rp.x-1,rp.y-20,3,20);
+    ctx.beginPath();ctx.moveTo(rp.x+2,rp.y-20);ctx.lineTo(rp.x+15,rp.y-16);
+    ctx.lineTo(rp.x+2,rp.y-12);ctx.closePath();ctx.fill();
+  }
+}
+function tekenEenheid(e){
+  const x=e.x,y=e.y, wip=Math.sin(e.tred);
+  ctx.fillStyle='rgba(10,14,7,.35)';
+  ctx.beginPath();ctx.ellipse(x,y+2,8,3,0,0,TAU);ctx.fill();
+  ctx.save();ctx.translate(x,y+wip*.4);
+  if(e.rig<0)ctx.scale(-1,1);
+  ctx.fillStyle='#2a1f12';ctx.fillRect(-4+wip*2.5,-6,3.5,7);ctx.fillRect(1-wip*2.5,-6,3.5,7);
+  ctx.fillStyle=e.flits>0?'#c05038':e.klr;ctx.fillRect(-5,-19,10,13);
+  ctx.fillStyle='rgba(226,240,180,.32)';ctx.fillRect(-5,-19,2.5,13);
+  ctx.fillStyle='#4e5a34';ctx.fillRect(-5,-19,10,3);            // baadjie-band: soldaat, nie boer nie
+  ctx.fillStyle='#dfa987';ctx.fillRect(-4,-27,8,8);
+  ctx.fillStyle=e.hare;ctx.fillRect(-4,-29,8,3);
+  if(e.tipe==='wagter'){                                        // graaf oor die skouer
+    const sw=Math.sin(clamp(e.slaan,0,1)*Math.PI)*1.3;
+    ctx.save();ctx.translate(4,-16);ctx.rotate(-.9+sw);
+    ctx.fillStyle='#5d4a2c';ctx.fillRect(0,-1.6,14,3.2);
+    ctx.fillStyle='#9aa0a2';ctx.fillRect(13,-4.5,6,9);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.strokeRect(13,-4.5,6,9);
+    ctx.restore();
+  }else if(e.tipe==='skut'){                                    // .22 teen die skouer
+    ctx.save();ctx.translate(3,-15);ctx.rotate(-.15);
+    ctx.fillStyle='#3a2a18';ctx.fillRect(-2,-1.4,7,3);
+    ctx.fillStyle='#6b6a5a';ctx.fillRect(5,-1,15,2);
+    ctx.restore();
+  }else{                                                        // kettingsaag
+    const br=Math.sin(performance.now()/40)*1.2;
+    ctx.save();ctx.translate(4,-14+br*.3);ctx.rotate(-.35+Math.sin(clamp(e.slaan,0,1)*Math.PI)*1.1);
+    ctx.fillStyle='#c05038';ctx.fillRect(-1,-4,8,8);
+    ctx.fillStyle='#9aa0a2';ctx.fillRect(7,-2,16,4);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.strokeRect(7,-2,16,4);
+    ctx.restore();
+  }
+  ctx.strokeStyle='rgba(20,24,14,.75)';ctx.lineWidth=2;
+  ctx.strokeRect(-5,-19,10,13);ctx.strokeRect(-4,-27,8,8);
+  ctx.restore();
+  if(e.skoot>0){                                                // die .22 se lyn
+    ctx.strokeStyle='rgba(255,236,180,.85)';ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.moveTo(x+(e.rig>0?9:-9),y-16);ctx.lineTo(e.skootX,e.skootY);ctx.stroke();
+  }
+  if(e.hp<e.maksHp){
+    const w=18;
+    ctx.fillStyle='rgba(10,14,7,.8)';ctx.fillRect(x-w/2,y-38,w,4);
+    ctx.fillStyle=e.hp/e.maksHp>.4?'#7fc95e':'#c05038';
+    ctx.fillRect(x-w/2+1,y-37,(w-2)*clamp(e.hp/e.maksHp,0,1),2);
+  }
+  if(KAM.z>1.5){
+    ctx.font='13px VT323, monospace';ctx.textAlign='center';
+    ctx.fillStyle='rgba(236,229,204,.75)';ctx.fillText(e.naam,x,y-42);
+  }
+}
+
+/* ============================== BALK-RY ==============================
+   Wanneer 'n klaar kaserne gekies is, WORD die onderste ry die krygsry — dieselfde
+   modale patroon as die bou-ry. So steel die nuwe knoppies nooit plek by die
+   rantsoen-hefboom nie; los die kaserne en die gewone ry is terug. */
+function kasBalkRy(r){
+  const g=GEKIES, vlak=gVlak(g);
+  for(const t of EENHEID_ORDE){
+    const E=EENHEIDT[t];
+    const b=document.createElement('button');
+    const oop=vlak>=E.vlak;
+    const kan=oop&&(S.goud||0)>=E.goud&&(EENHEDE.length+touLengte())<kooieTotaal()
+              &&MENSE.length-1>=KRYGS_MIN&&(g.tou||[]).length<KAS_TOU_MAKS;
+    b.className='kn'+(kan?'':' kan_nie');
+    b.innerHTML=E.ikoon+' '+E.naam+'<small>'+
+      (oop?E.goud+'🪙 · '+E.oefen+'s · 1 mens':'kaserne vlak '+E.vlak)+'</small>';
+    b.onclick=()=>{werfEenheid(t);};
+    r.appendChild(b);
+  }
+  const vp=document.createElement('button');
+  vp.className='kn'+(MODUS==='rally'?' aan':'');
+  vp.innerHTML='⚑ Versamel<small>waar hulle staan</small>';
+  vp.onclick=()=>{MODUS=MODUS==='rally'?null:'rally';
+    wysPrompt(MODUS==='rally'?'Tik waar die soldate moet staan.':null);bouBalk();};
+  r.appendChild(vp);
+  if((g.tou||[]).length){
+    const kk=document.createElement('button');kk.className='kn rooi';
+    kk.innerHTML='✗ Kanselleer<small>goud terug</small>';
+    kk.onclick=()=>kanselleerLaaste();
+    r.appendChild(kk);
+  }
+  if(EENHEDE.length){
+    const ob=document.createElement('button');ob.className='kn';
+    ob.innerHTML='↩ Ontbind<small>laaste soldaat → boer</small>';
+    ob.onclick=()=>ontbindLaaste();
+    r.appendChild(ob);
+  }
+  const kl=document.createElement('button');kl.className='kn';kl.textContent='↩';
+  kl.onclick=()=>{MODUS=null;wysPrompt(null);kiesGebou(null);};
+  r.appendChild(kl);
+}
+
+/* ============================== HERSTEL ============================== */
+function herstelKrygsmag(){
+  for(const rec of (S.eenh||[])){
+    const [tipe,x,y,hp,naam]=rec;
+    if(!EENHEIDT[tipe])continue;
+    const e=nuweEenheid(tipe,x||WERF.x,y||WERF.y,null);
+    e.hp=clamp(hp||e.maksHp,1,e.maksHp);
+    if(naam)e.naam=naam;
+    EENHEDE.push(e);
+  }
+  hervormEenhede();
+  rouDag=S.dag;
+  bouBalk();
+}
+window.gfKrygsmag=EENHEDE;      // haak vir die toetsharnas en 'n latere bevel-stelsel
 
 /* ============================== LUS ============================== */
 function raam(now){
@@ -2854,5 +3595,6 @@ if(!S.geb||!S.geb.length){
   for(let i=0;i<5;i++)VRAGTE.push({x:1520+rand(-30,220),y:1230+rand(0,60),soort:'hout',geëis:0});
 }
 bemanGeboue();bouBalk();
+herstelKrygsmag();
 requestAnimationFrame(raam);
 </script>
