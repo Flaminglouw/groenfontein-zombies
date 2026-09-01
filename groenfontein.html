@@ -245,6 +245,8 @@ const GT={
              help:'Kos hou langer. Die braai vat hier.'},
   skathuis: {naam:'Skathuis',     ikoon:'🪙', koste:{hout:6,klip:5},   w:66, h:56, skat:true,
              help:'Hier bêre jy goud. Eers dan kan jy belasting vra.'},
+  mark:     {naam:'Die Mark',     ikoon:'⚖️', koste:{hout:8,klip:4},   w:88, h:64, mark:true,
+             help:'Die smous koop en verkoop vir goud. Verkoop bietjie-bietjie — hy druk die prys af.'},
   braai:    {naam:'Braaiplek',    ikoon:'🔥', koste:{hout:4,klip:2},   w:58, h:48, braai:true,
              help:'Elke skemer brand hy. Almal se humeur lig.'},
   wagtoring:{naam:'Wagtoring',    ikoon:'🗼', koste:{hout:6,klip:4},   w:50, h:50, lig:true,
@@ -261,7 +263,7 @@ const GT={
              mkleur:['#8a7658','#54432b','#b19a63'],
              help:'Mense stap deur. Dwalers nie. Sonder hom klim hulle oor.'},
 };
-const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','skathuis','braai','wagtoring',
+const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','skathuis','mark','braai','wagtoring',
                'palissade','klipmuur','hekhuis'];
 const ST_N=5;                                   // vyf sigbare stadiums
 function stKoste(t){                            // hoeveel vragte moet aangedra word
@@ -301,6 +303,9 @@ const VLAKKE={
   klipgroef:[{plekke:2},                    {plekke:3,koste:{hout:5}},       {plekke:4,koste:{hout:7,klip:2}}],
   braai:    [{gl:4},                        {gl:6,  koste:{hout:3,klip:2}},  {gl:8, koste:{hout:5,klip:4}}],
   wagtoring:[{gl:2},                        {gl:3,  koste:{hout:4,klip:3}},  {gl:4, koste:{hout:6,klip:5}}],
+  /* MARK: die opgradering VERNOU die spreiding en vergroot die wa (kwota 8/12/20). */
+  mark:     [{sprei:{v:1,k:1}},             {sprei:{v:1.15,k:.92},koste:{hout:6,klip:4}},
+                                            {sprei:{v:1.30,k:.85},koste:{hout:9,klip:7}}],
 };
 function gVlak(g){return g.vlak||1;}
 function beginOpgradeer(g){
@@ -733,6 +738,8 @@ function soekTaak(m){
     if(d<bd){bd=d;beste=v;}
   }
   if(beste){beste.geëis=1;return {tipe:'dra',v:beste,fase:0};}
+  // 3½. die mark se vragte — ná bousites en los vragte, VOOR werkplek-werk
+  {const mt=markTaak(m);if(mt)return mt;}
   // 4. my werkplek se werk
   if(m.werkplek&&m.werkplek.klaar){
     const w=GT[m.werkplek.tipe].werk;
@@ -825,6 +832,7 @@ function mensTik(m,dt){
     }
     if(m.taak&&m.taak.tipe==='bou'&&m.taak.site){m.taak.site.bouer=null;m.taak=null;}
     if(m.taak&&m.taak.tipe==='storm')m.taak=null;   // die klok roep OOK die kommando terug
+    if(m.taak&&(m.taak.tipe==='verkoop'||m.taak.tipe==='haal')){markStaak(m);m.taak=null;}   // gee die eis terug — 'n BETAALDE vrag mag nie verdwyn
     if(m.stoepPlek===undefined)m.stoepPlek=rand(-52,52);
     stapNa(m,STOEP.x+m.stoepPlek,STOEP.y+rand(-2,2),dt);
     return;
@@ -971,6 +979,45 @@ function mensTik(m,dt){
       }
     }else{
       if(stapNa(m,BR_KOOI.x+10,BR_KOOI.y+8,dt)){m.help=null;broerInKooi(b);m.taak=null;}
+    }
+    break; }
+  case 'verkoop': {   // hoop → die smous se wa; die goud kom by AFLEWERING
+    const g=t.g;
+    if(!g||!g.klaar){markStaak(m);m.taak=null;break;}
+    if(t.fase===0){
+      const h=hoopVan(t.soort);
+      if(stapNa(m,h.x,h.y+6,dt)){
+        if(voorraad(t.soort)<=0){markStaak(m);m.taak=null;break;}
+        if(t.soort==='kos')kosEet(1);else bykom(t.soort,-1);   // kos deur die GROOTBOEK
+        m.dra=t.soort;t.fase=1;
+        const [tx,ty]=markLosPunt(g);t.tx=tx;t.ty=ty;
+      }
+    }else{
+      if(stapNa(m,t.tx,t.ty,dt)){
+        const p=prysVerkoop(t.soort);
+        m.dra=null;goudBy(p);markDrukBy(t.soort,-1);S.markVerk=(S.markVerk||0)+1;
+        if(t.soort==='kos')markKosTel++;        // die mense sien dit — sien die GLBRONNE-ry
+        spanne(g.x,g.y-10,5,'#e8c96a');klank(720,.07,.1);
+        plToast('+'+p+'🪙 vir 1 '+MARKNAAM[t.soort].toLowerCase());
+        m.sê=1.1;m.taak=null;persistSoon();markPaneelVars();
+      }
+    }
+    break; }
+  case 'haal': {      // die betaalde vrag by die wa → die hoop
+    const g=t.g;
+    if(!g||!g.klaar){markStaak(m);m.taak=null;break;}
+    if(t.fase===0){
+      if(t.tx===undefined){const [tx,ty]=markLosPunt(g);t.tx=tx;t.ty=ty;}
+      if(stapNa(m,t.tx,t.ty,dt)){
+        m.dra=t.soort;t.fase=1;klank(300,.05,.07);
+        const h=hoopVan(t.soort);t.hx=h.x+rand(-8,8);t.hy=h.y+rand(-4,10);
+      }
+    }else{
+      if(stapNa(m,t.hx,t.hy,dt)){
+        if(t.soort==='kos')kosIn('groente',1);else bykom(t.soort,1);   // kos deur die GROOTBOEK
+        spanne(m.x,m.y-10,4,'#c9b06a');klank(330,.05,.07);
+        m.dra=null;m.sê=1.1;m.taak=null;markPaneelVars();
+      }
     }
     break; }
   case 'vat': {   // hoop → bousite
@@ -1183,10 +1230,308 @@ function dagDryf(){                       // een keer per spel-dag
   hongerVorige=hongerTel; hongerTel=0;    // rol die honger-venster oor
   kosDagVorige=kosDagIn; kosDagIn={};     // rol die kos-toevoer-venster oor
   nesDagRol();                            // roem verbleik, rou bedaar, wonde genees
+  markDagRol();                           // prysdruk sak terug; die wa is weer leeg
   S.geluk=clamp(Math.round(S.geluk+som),0,100);
   if(som<0&&S.geluk<40)paSê('Die mense kla, ' + (voorraad('kos')<=0?'daar’s niks te ete nie.':'hoor jy?'));
   persistSoon();
 }
+
+/* ============================================================================
+   DIE MARK — die smous se wa.
+   PLAAS HIERDIE BLOK NET NA DIE GELUK-AFDELING (na dagDryf), voor
+   "/* ===== KLOK / DWALERS / PA ===== *​/".  Alles hier is selfstandig: die CSS,
+   die HUD-munt en die paneel word van JS af ingespuit, sodat die <style>- en
+   <body>-dele van die lêer onaangeraak bly.
+
+   HOEKOM 'n mark: die visie het EEN ekonomie-brug — munte uit die zombie-lopies
+   is die held-oproep se geldeenheid. Sonder 'n ventiel is 'n vasgeloopte plaas
+   (geen klip, geen kos, nie genoeg hande nie) net dood. Die mark is daardie
+   ventiel, en hy is DUUR: die spreiding tussen koop en verkoop is die prys van
+   ongeduld.
+
+   HOEKOM dit deur die dra-ketting loop: 'n knoppie wat sommer S.hout aftrek en
+   S.goud optel, is presies die soort onsigbare getal wat hierdie spel weier. Die
+   smous betaal wanneer die vrag by die wa AANKOM.
+   ============================================================================ */
+
+/* ---- toestand aan S vasgemaak, dus ry hy gratis saam met persist() ---- */
+function markInit(){
+  if(typeof S.goud!=='number')S.goud=0;
+  /* mDruk = prysdruk per goed (hout,klip,kos). Negatief = ons het die mark
+     volgestop en die prys geval. */
+  if(!Array.isArray(S.mDruk)||S.mDruk.length!==3)S.mDruk=[0,0,0];
+  /* markRy = [verkoop-h,verkoop-k,verkoop-v, koop-h,koop-k,koop-v] — vragte wat
+     nog op 'n paar hande wag. Dit MOET persisteer: 'n koop is reeds betaal, en 'n
+     herlaai mag nie die speler se goud opeet nie. */
+  if(!Array.isArray(S.markRy)||S.markRy.length!==6)S.markRy=[0,0,0,0,0,0];
+  if(typeof S.markVerk!=='number')S.markVerk=0;     // vragte VANDAG verkoop (kwota)
+}
+markInit();
+
+let markKosTel=0;          // kos wat VANDAG aan die smous verkoop is (humeur-prys)
+let MK_AANTAL=1;           // ×1 of ×5 per tik — foon-vriendelike blok-bestelling
+
+const MARKGOED=['hout','klip','kos'];
+const MARKNAAM={hout:'Hout',klip:'Klip',kos:'Kos'};
+const MARKIKOON={hout:'🪵',klip:'🪨',kos:'🥔'};
+/* BASIS-PRYSE is op ARBEID geyk, nie op smaak nie — gemeet teen die bestaande
+   tempo's in hierdie lêer:
+     hout : kap 12hp × 0.9s = ~11s vir 3 vragte, plus die dra  → ~1 vrag / ~9s
+     kos  : oes 5s plus 'n kort stap spens toe                 → ~1 vrag / ~15s
+     klip : delf 6s PLUS die lang stap koppie toe en terug     → ~1 vrag / ~45s
+   Klip is dus die duurste ding op die werf, en die prys sê dit hardop. */
+const MARKBASIS={
+  hout:{koop: 5,verkoop:3},
+  klip:{koop:15,verkoop:9},
+  kos: {koop: 9,verkoop:5},
+};
+/* DAAGLIKSE KWOTA — die smous se wa is vol. Sonder dit lewer een houthut 84 goud/dag teen
+   belasting se 1.2 per mens: niemand sou ooit belasting hef nie (hersiening #22). Die
+   opgradering koop 'n groter wa: 8 / 12 / 20 vragte per dag. */
+const MARK_KWOTA=[8,12,20];
+function markKwota(){const g=markGebou();return g?MARK_KWOTA[gVlak(g)-1]:0;}
+function markKwotaOor(){return Math.max(0,markKwota()-(S.markVerk||0));}
+const mIdx=s=>s==='hout'?0:s==='klip'?1:2;
+
+function markDruk(s){return S.mDruk[mIdx(s)]||0;}
+function markDrukBy(s,n){S.mDruk[mIdx(s)]=clamp((S.mDruk[mIdx(s)]||0)+n,-30,30);}
+/* Die druk-vermenigvuldiger tref ALBEI kante. Dump jy 15 hout op een dag, val
+   die verkoopprys van 6 na 4 — en die koopprys val saam, sodat die spreiding
+   nooit omdraai en 'n koop-verkoop-lus nooit wins maak nie. */
+function markMult(s){return clamp(1+markDruk(s)*0.04,0.55,1.5);}
+function markGebou(){for(const g of GEB)if(g.klaar&&GT[g.tipe].mark)return g;return null;}
+function markSprei(){
+  const g=markGebou(); const d=g?vDat('mark',gVlak(g)):null;
+  return (d&&d.sprei)?d.sprei:{v:1,k:1};
+}
+function prysVerkoop(s){
+  return Math.max(1,Math.round(MARKBASIS[s].verkoop*markMult(s)*markSprei().v));
+}
+function prysKoop(s){
+  /* Die +1-vloer is 'n WET, nie 'n versiering nie: sou afronding by vlak 3 en
+     volle druk die twee pryse ooit laat raak, staan hier 'n oneindige goudlus. */
+  return Math.max(prysVerkoop(s)+1,Math.round(MARKBASIS[s].koop*markMult(s)*markSprei().k));
+}
+function goud(){return S.goud||0;}
+/* goudBy() en die HUD-chip behoort aan die belasting-stelsel — een deur, een chip. */
+
+/* Hoeveel voorraad is reeds BELOOF aan die smous? Sonder hierdie som kan die
+   speler 20 vragte bestel waar 6 lê, en die ry staan vir ewig half-vol. */
+function markGevraag(s){
+  let n=S.markRy[mIdx(s)]||0;
+  for(const m of MENSE)
+    if(m.taak&&m.taak.tipe==='verkoop'&&m.taak.soort===s&&m.taak.fase===0)n++;
+  return n;
+}
+function markWagKoop(s){
+  let n=S.markRy[3+mIdx(s)]||0;
+  for(const m of MENSE)if(m.taak&&m.taak.tipe==='haal'&&m.taak.soort===s)n++;
+  return n;
+}
+
+function markBestelVerkoop(s,n){
+  const g=markGebou();
+  if(!g){plToast('Die mark staan nog nie.');klank(150,.16,.1);return;}
+  const beskikbaar=voorraad(s)-markGevraag(s);
+  const oor=markKwotaOor()-MARKGOED.reduce((a,q)=>a+(S.markRy[mIdx(q)]||0),0);
+  if(oor<=0){plToast('Die smous se wa is vol vir vandag.');klank(150,.16,.1);return;}
+  const k=Math.min(n,oor,Math.max(0,beskikbaar));
+  if(k<=0){plToast('Geen '+MARKNAAM[s].toLowerCase()+' oor om te verkoop nie.');
+           klank(150,.16,.1);return;}
+  S.markRy[mIdx(s)]+=k;
+  plToast(k+'× '+MARKNAAM[s].toLowerCase()+' gaan mark toe.');
+  klank(520,.07,.09);persistSoon();markPaneelVars();
+}
+function markKoop(s,n){
+  const g=markGebou();
+  if(!g){plToast('Die mark staan nog nie.');klank(150,.16,.1);return;}
+  let gekoop=0;
+  /* EEN-EEN gekoop, want die prys STYG met elke vrag. 'n Blok-aankoop teen die ou
+     prys sou juis die rem uitskakel wat ons hier inbou. */
+  for(let i=0;i<n;i++){
+    const p=prysKoop(s);
+    if(goud()<p)break;
+    goudBy(-p);markDrukBy(s,1);S.markRy[3+mIdx(s)]++;gekoop++;
+  }
+  if(!gekoop){plToast('Te min goud.');klank(150,.16,.1);return;}
+  plToast(gekoop+'× '+MARKNAAM[s].toLowerCase()+' gekoop — dit lê by die wa.');
+  klank(600,.09,.1);persistSoon();markPaneelVars();
+}
+
+/* Die taak-toewyser. Koop-vragte kry voorkeur bo verkoop-vragte: die speler het
+   reeds daarvoor betaal, en 'n betaalde vrag wat by die wa staan en verrot, voel
+   soos diefstal. */
+function markTaak(m){
+  const g=markGebou();
+  if(!g)return null;
+  for(const s of MARKGOED)
+    if((S.markRy[3+mIdx(s)]||0)>0){S.markRy[3+mIdx(s)]--;return {tipe:'haal',g,soort:s,fase:0};}
+  for(const s of MARKGOED)
+    if((S.markRy[mIdx(s)]||0)>0&&voorraad(s)>0){S.markRy[mIdx(s)]--;return {tipe:'verkoop',g,soort:s,fase:0};}
+  return null;
+}
+/* Gee die eis terug aan die ry — SLEGS in fase 0. Is die vrag reeds opgetel, lê
+   hy in die mens se hande en losVrag() plaas hom op die grond, waar die gewone
+   'dra'-taak hom hoop toe vat. Sou ons ook dán die ry ophoog, vermeerder een
+   gestaakte koop-vrag in twee: een op die grond én een uit die niet. */
+function markStaak(m){
+  const t=m.taak;if(!t||t.fase!==0)return;
+  if(t.tipe==='verkoop')S.markRy[mIdx(t.soort)]++;
+  else if(t.tipe==='haal')S.markRy[3+mIdx(t.soort)]++;
+}
+function markLosPunt(g){
+  return [g.x+rand(-16,16), g.y+GT[g.tipe].h/2+rand(4,12)];
+}
+
+/* Prysdruk sak elke dag 40% terug, met trunkasie NA NUL toe sodat -1 die volgende
+   dag werklik 0 word en die mark nooit permanent stukkend bly nie. Vier dae om
+   van 'n groot dump te herstel — genoeg dat "verkoop bietjie-bietjie" die regte
+   speel is, min genoeg dat 'n slegte besluit nie 'n straf vir 'n week is nie. */
+function markDagRol(){
+  for(let i=0;i<3;i++)S.mDruk[i]=Math.trunc((S.mDruk[i]||0)*0.6);
+  markKosTel=0; S.markVerk=0;              // 'n nuwe dag, 'n leë wa
+  markPaneelVars();
+}
+
+/* ---------------------------- DIE PANEEL ---------------------------- */
+(function markDom(){
+  const st=document.createElement('style');
+  st.textContent=
+  '#markpaneel{position:fixed;left:50%;transform:translateX(-50%);bottom:104px;z-index:8;'+
+    'display:none;background:rgba(10,14,7,.96);border:3px solid var(--lyn);'+
+    'box-shadow:0 0 0 3px #0a0e07;padding:10px 12px;width:min(94vw,420px);'+
+    'max-height:58vh;overflow-y:auto;pointer-events:auto}'+
+  '#markpaneel h4{font-family:\'Press Start 2P\',monospace;font-size:10px;color:var(--goud);'+
+    'letter-spacing:1px;margin-bottom:9px;font-weight:400}'+
+  '#markpaneel .mr{display:flex;align-items:center;gap:8px;padding:5px 0;'+
+    'border-top:1px solid rgba(92,74,46,.55)}'+
+  '#markpaneel .mr:first-child{border-top:0}'+
+  '#markpaneel .mk1{flex:1;font-size:19px;color:var(--ink);line-height:1.12}'+
+  '#markpaneel .mk1 small{display:block;font-size:15px;color:var(--dof);letter-spacing:0}'+
+  '#markpaneel .mk2{display:flex;gap:6px}'+
+  '#markpaneel .mk2 .kn{min-width:76px;text-align:center;padding:5px 8px}'+
+  '#markpaneel .kn[disabled]{opacity:.42}'+
+  '#markpaneel .vt{font-size:17px;color:var(--dof);margin-top:8px;line-height:1.25}'+
+  '#markpaneel .waarsku{color:var(--rooi)}'+
+  '#markpaneel .op{color:var(--groen)}#markpaneel .af{color:var(--rooi)}'+
+  '#markpaneel .knr{display:flex;gap:6px;margin-top:9px}'+
+  '#markpaneel .knr .kn{flex:1;text-align:center}'+
+  '@media(max-width:560px){#markpaneel .mk2 .kn{min-width:66px}#markpaneel .mk1{font-size:17px}}';
+  document.head.appendChild(st);
+
+
+  const p=document.createElement('div');
+  p.id='markpaneel';
+  p.innerHTML='<h4 id="mkKop">DIE MARK</h4><div id="mkRye"></div><div id="mkVoet"></div>';
+  document.body.appendChild(p);
+  p.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.v)markBestelVerkoop(b.dataset.v,MK_AANTAL);
+    else if(b.dataset.k)markKoop(b.dataset.k,MK_AANTAL);
+    else if(b.dataset.n){MK_AANTAL=+b.dataset.n;klank(440,.05,.08);}
+    else if(b.dataset.sluit){markToe();return;}
+    markPaneelVars();
+  });
+
+  // 'n tik op die mark-gebou moet handel oopmaak, nie net 'n opgradeer-kaart nie
+  const kn=document.createElement('button');
+  kn.className='kn';kn.id='gkMark';kn.textContent='🪙 Open die mark';
+  kn.style.cssText='margin-top:8px;width:100%;display:none';
+  kn.onclick=()=>markOop();
+  const gk=document.getElementById('gebkaart');
+  gk.insertBefore(kn,document.getElementById('gkOpg'));
+
+})();
+
+function markOopIs(){const p=document.getElementById('markpaneel');return !!p&&p.style.display==='block';}
+function markToe(){
+  const p=document.getElementById('markpaneel');
+  if(p)p.style.display='none';
+  klank(260,.06,.08);bouBalk();
+}
+function markOop(){
+  if(!markGebou()){plToast('Die mark staan nog nie.');klank(150,.16,.1);return;}
+  document.getElementById('gebkaart').style.display='none';
+  document.getElementById('glkaart').style.display='none';
+  document.getElementById('markpaneel').style.display='block';
+  markPaneelVars();klank(560,.08,.1);bouBalk();
+}
+function markWissel(){markOopIs()?markToe():markOop();}
+
+function markPaneelVars(){
+  const p=document.getElementById('markpaneel');
+  if(!p||p.style.display!=='block')return;
+  const g=markGebou(), v=g?gVlak(g):1;
+  document.getElementById('mkKop').textContent=
+    'DIE MARK'+(g&&v>1?' · VLAK '+v:'')+(g?'':' · GESLUIT');
+  let h='';
+  for(const s of MARKGOED){
+    const pv=prysVerkoop(s), pk=prysKoop(s);
+    const vr=voorraad(s), opPad=markGevraag(s)+markWagKoop(s), dr=markDruk(s);
+    const merk=dr<=-4?' · <span class="af">prys gedruk</span>'
+              :dr>= 4?' · <span class="op">prys hoog</span>':'';
+    h+='<div class="mr">'+
+       '<div class="mk1">'+MARKIKOON[s]+' '+MARKNAAM[s]+
+         '<small>'+vr+' op die hoop'+(opPad?' · '+opPad+' op pad':'')+merk+'</small></div>'+
+       '<div class="mk2">'+
+         '<button class="kn rooi" data-v="'+s+'"'+
+           ((!g||vr-markGevraag(s)<=0)?' disabled':'')+'>−'+MK_AANTAL+
+           '<small>'+pv+'🪙 elk</small></button>'+
+         '<button class="kn groen" data-k="'+s+'"'+
+           ((!g||goud()<pk)?' disabled':'')+'>+'+MK_AANTAL+
+           '<small>'+pk+'🪙 elk</small></button>'+
+       '</div></div>';
+  }
+  document.getElementById('mkRye').innerHTML=h;
+  /* Kos-dae is die enigste syfer wat 'n speler nodig het om NIE sy dorp te
+     verkoop nie: by drempel 60 eet die dorp 4×mense×rantsoen kos per volle dag. */
+  const r=RANTSOEN[S.rant], eet=4*MENSE.length*(r?r.mult:1);
+  const dae=eet>0?voorraad('kos')/eet:Infinity;
+  const daeT=eet>0?dae.toFixed(1)+' dae':'onbepaald (geen rantsoen)';
+  document.getElementById('mkVoet').innerHTML=
+    '<div class="vt"><b style="color:var(--goud)">'+goud()+'🪙 in die beursie</b>'+
+      ' · wa: '+markKwotaOor()+'/'+markKwota()+' vragte oor vandag'+
+      ' · kos hou '+daeT+(dae<1.5?' <span class="waarsku">— moenie kos verkoop nie!</span>':'')+'</div>'+
+    '<div class="vt">Elke vrag wat jy verkoop, druk daardie prys af; hy herstel oor ’n paar dae. '+
+      'Kos wat die smous kry, eet niemand — die mense onthou dit.</div>'+
+    '<div class="knr">'+
+      [1,5].map(n=>'<button class="kn'+(MK_AANTAL===n?' aan':'')+'" data-n="'+n+'">×'+n+'</button>').join('')+
+      '<button class="kn" data-sluit="1">Sluit</button></div>';
+}
+
+/* Die wa langs die mark. Sonder hom is 'n mark net nog 'n hut — en die krat-stapel
+   is die betaalde koop-vragte wat wag: die speler moet sy geld kan SIEN lê. */
+function tekenMarkEkstra(g,x,y,w,h){
+  if(!g.klaar)return;
+  const wx=x+w+16, wy=y+h-6;
+  ctx.fillStyle='rgba(16,22,11,.28)';
+  ctx.beginPath();ctx.ellipse(wx+12,wy+4,26,7,0,0,TAU);ctx.fill();
+  ctx.fillStyle='#7a5a34';ctx.fillRect(wx-8,wy-16,40,12);
+  ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(wx-8,wy-16,40,12);
+  ctx.fillStyle='#d9cdb0';
+  ctx.beginPath();ctx.moveTo(wx-6,wy-16);
+  ctx.quadraticCurveTo(wx+12,wy-42,wx+30,wy-16);ctx.closePath();ctx.fill();
+  ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+  ctx.fillStyle='#4a3a22';
+  for(const cx of [wx+2,wx+24]){
+    ctx.beginPath();ctx.arc(cx,wy-2,6,0,TAU);ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+  }
+  const wag=(S.markRy[3]||0)+(S.markRy[4]||0)+(S.markRy[5]||0);
+  for(let i=0;i<Math.min(wag,9);i++){
+    const kx=x-4+(i%3)*14, ky=y+h+5+((i/3)|0)*9;
+    ctx.fillStyle=i%2?'#8a6f3f':'#93764a';ctx.fillRect(kx,ky,13,7);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.strokeRect(kx,ky,13,7);
+  }
+}
+/* ======================= EINDE VAN DIE MARK-BLOK ======================= */
+
+/* ---- MARK deur die REGISTERS ---- */
+GLBRONNE.push(rye=>{
+  /* DIE SMOUS SE KOS — wat jy verkoop het, eet niemand. Die rede om NIE jou spens leeg te
+     verkoop nie, en dit tref presies een keer: die dag daarna. Kategorie kos. */
+  if(markKosTel>0)rye.push([markKosTel+' kos aan die smous verkoop',-Math.min(6,1+Math.floor(markKosTel/3)),'kos']);
+});
 
 /* ============================== KLOK / DWALERS / PA ============================== */
 let KLOKAAN=false, klokSwaai=0;
@@ -1361,6 +1706,7 @@ function bouBalk(){
   const w=document.getElementById('winkel');
   w.innerHTML='';
   for(const t of GT_ORDE){
+    if(t==='mark'&&GEB.some(g=>GT[g.tipe].mark))continue;   // een mark; 'n tweede doen niks
     const G2=GT[t];
     const b=document.createElement('button');
     b.className='kn'+(PLAAS===t?' aan':'')+(kanBekostig(t)?'':' kan_nie');
@@ -1415,6 +1761,13 @@ function bouBalk(){
       if(!sk){plToast('Jy kort ’n skathuis.');return;}
       document.getElementById('glkaart').style.display='none';wysBelkaart();};
     r.appendChild(bt);
+    if(markGebou()){                        // die mark-knoppie verskyn eers as die mark STAAN
+      const mkB=document.createElement('button');
+      mkB.className='kn'+(markOopIs()?' aan':'');
+      mkB.innerHTML='⚖️ Mark<small>'+goud()+' goud · wa '+markKwotaOor()+'/'+markKwota()+'</small>';
+      mkB.onclick=()=>{markWissel();bouBalk();};
+      r.appendChild(mkB);
+    }
     broerKnoppie(r);
     const pf=document.createElement('button');pf.className='kn'+(METE?' aan':'');pf.textContent='meet';
     pf.onclick=()=>{METE=!METE;mTye=[];document.getElementById('perf').style.display=METE?'block':'none';bouBalk();};
@@ -1664,6 +2017,7 @@ function kiesGebou(g){
   if(NESKIES){NESKIES=null;nesKnoppe(false);}   // die twee deel een kaart
   bouBalk();   // die kaserne se krygsry leef in die balk, nie in die gebou-kaart nie
   const kaart=document.getElementById('gebkaart');
+  {const mkKn=document.getElementById('gkMark');if(mkKn)mkKn.style.display=(g&&GT[g.tipe].mark&&g.klaar)?'block':'none';}
   if(!g){kaart.style.display='none';return;}
   const G2=GT[g.tipe], v=gVlak(g), maks=maxVlak(g.tipe);
   document.getElementById('gkNaam').textContent=(G2.ikoon||'')+' '+G2.naam.toUpperCase()+
@@ -2885,7 +3239,7 @@ function tekenGebou(g){
     tuin:['#4f7434','#3d5c2a','#8a6f3f'],spens:['#b9a06a','#8a7648','#c9c0aa'],
     braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2'],
     hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa'],
-    skathuis:['#b9a06a','#7a6a3f','#8c8477']}[g.tipe]
+    skathuis:['#b9a06a','#7a6a3f','#8c8477'],mark:['#b9793f','#8a5a2c','#c9c0aa']}[g.tipe]
     ||['#8a7658','#6f5c44','#c9c0aa'];
   /* Beter materiaal: die muur word gekalk, die dak word dikker gedek. Een meng,
      geen tweede palet om uit pas te raak nie. */
@@ -3034,6 +3388,7 @@ function tekenGebou(g){
     ctx.fillStyle=g.opgradeer?'#e8c96a':'#e0b64f';
     ctx.fillRect(x+1,yT2-12,(w-2)*clamp(p,0,1),5);
   }
+  if(G2.mark)tekenMarkEkstra(g,x,y,w,h);     // die smous se wa en die krat-stapel
   /* Die vlak word nou in die SILHOEET gedra (gewelpen/banier/fondament/skoorsteen) —
      die ou goue pitte is weg: een merk per gebou, anders lees dit as ruis. */
 }
