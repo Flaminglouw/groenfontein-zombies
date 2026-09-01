@@ -195,10 +195,20 @@ const GT={
              help:'Elke skemer brand hy. Almal se humeur lig.'},
   wagtoring:{naam:'Wagtoring',    ikoon:'🗼', koste:{hout:6,klip:4},   w:50, h:50, lig:true,
              help:'’n Lantern brand snags. Dwalers kom nie naby nie.'},
-  palissade:{naam:'Palissade',    ikoon:'🪵', koste:{hout:1},          w:40, h:40, muur:true,
-             help:'’n Paal-heining. Bou ’n ry.'},
+  /* hoog === dik*2 is LAS-DRAEND: dit maak dat 'n N-S loop se bo-vlakke naatloos dek. */
+  palissade:{naam:'Palissade',    ikoon:'🪵', koste:{hout:2},          w:40, h:40, muur:true,
+             hp:90,  hoog:22, dik:11, mkleur:['#7a6039','#4e3c22','#9b7c46'],
+             help:'’n Paalmuur. Tik begin en einde — hy sluit vanself aan.'},
+  klipmuur: {naam:'Klipmuur',     ikoon:'🧱', koste:{hout:1,klip:3},   w:40, h:40, muur:true,
+             klipMuur:true, hp:240, hoog:26, dik:13, mkleur:['#8c8477','#5a564c','#a8a094'],
+             help:'Byna drie keer so sterk as hout. Dwalers kap lank daaraan.'},
+  hekhuis:  {naam:'Hekhuis',      ikoon:'🚪', koste:{hout:6,klip:3},   w:40, h:40, muur:true,
+             hek:true, enkel:true, hp:300, hoog:34, dik:17,
+             mkleur:['#8a7658','#54432b','#b19a63'],
+             help:'Mense stap deur. Dwalers nie. Sonder hom klim hulle oor.'},
 };
-const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','braai','wagtoring','palissade'];
+const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','braai','wagtoring',
+               'palissade','klipmuur','hekhuis'];
 const ST_N=5;                                   // vyf sigbare stadiums
 function stKoste(t){                            // hoeveel vragte moet aangedra word
   const k=GT[t].koste; return (k.hout||0)+(k.klip||0);
@@ -283,11 +293,15 @@ function sDrempel(g,st){
   return stDrempel(g.tipe,st);
 }
 function gebRegs(g){const G2=GT[g.tipe];return {x:g.x-G2.w/2,y:g.y-G2.h/2,w:G2.w,h:G2.h};}
-function botsGebou(x,y,w,h,skip){
+/* `pad` is die spasie wat ons om elke gebou eis. Die verstek 6 is presies hoekom 'n
+   AANEENLOPENDE palissade nog nooit gebou kon word nie: twee 40x40-selle langs mekaar
+   staan presies 40 uitmekaar en het dus altyd 'gebots'. Mure vra -2. */
+function botsGebou(x,y,w,h,skip,pad){
+  const p=(pad===undefined)?6:pad;
   for(const g of GEB){
     if(g===skip)continue;
     const r=gebRegs(g);
-    if(x-w/2<r.x+r.w+6&&x+w/2>r.x-6&&y-h/2<r.y+r.h+6&&y+h/2>r.y-6)return true;
+    if(x-w/2<r.x+r.w+p&&x+w/2>r.x-p&&y-h/2<r.y+r.h+p&&y+h/2>r.y-p)return true;
   }
   return false;
 }
@@ -426,7 +440,7 @@ function kanBou(tipe,x,y){
   if(dist2(x,y,KLIPBANK.x,KLIPBANK.y)<(KLIPBANK.r*.8)*(KLIPBANK.r*.8))return false;
   if(x+G2.w/2>RUINE.x-10&&x-G2.w/2<RUINE.x+RUINE.w+10&&
      y+G2.h/2>RUINE.y-10&&y-G2.h/2<RUINE.y+RUINE.h+10)return false;
-  if(botsGebou(x,y,G2.w,G2.h,null))return false;
+  if(botsGebou(x,y,G2.w,G2.h,null,G2.muur?-2:6))return false;
   for(const b of BOME){                  // nie bo-op 'n staande boom nie
     if(b.toestand!=='staan')continue;
     if(Math.abs(b.x-x)<G2.w/2+10&&Math.abs(b.y+4-y)<G2.h/2+10)return false;
@@ -670,8 +684,14 @@ function naasteBoom(x,y,maks){
    stapNa nooit aan nie. */
 function spoedVan(m){return m.spd*((m.dra||m.help)?0.78:1)*(m.aSpoed||1)*(m.aTempo||1);}
 function stapNa(m,tx,ty,dt){
+  /* MURE: staan 'n muur tussen hom en sy doel, word die hek 'n tussenpunt. Ons mag dan
+     NOOIT true teruggee wanneer hy die tussenpunt bereik nie — die oproeper sou dink die
+     taak is klaar terwyl hy nog by die hek staan. */
+  let omgelei=false;
+  const omp=muurOmpad(m,tx,ty,dt);
+  if(omp){tx=omp[0];ty=omp[1];omgelei=true;}
   const dx=tx-m.x,dy=ty-m.y,d=Math.hypot(dx,dy);
-  if(d<12)return true;
+  if(d<12)return !omgelei;
   let vx=dx/d,vy=dy/d;
   /* Boom-omleiding: die kant word met die kruisproduk gekies sodat ons NA die
      doel toe om die boom draai — 'n vaste handigheid het draers permanent om 'n
@@ -687,7 +707,9 @@ function stapNa(m,tx,ty,dt){
     }
   }
   const sp=spoedVan(m);
+  const mox=m.x, moy=m.y;
   m.x+=vx*sp*dt;m.y+=vy*sp*dt;
+  if(!(m.klim>0))muurStoot(m,mox,moy,true);   // hy loop nooit DEUR 'n muur nie
   m.rig=vx<0?-1:1;
   m.tred+=dt*(m.dra?6.4:7.4);
   return false;
@@ -852,7 +874,11 @@ function mensTik(m,dt){
           m.taak=null;break;
         }
         bykom(t.soort,-1);m.dra=t.soort;t.fase=1;
-        t.tx=site.x+rand(-14,14);t.ty=site.y+GT[site.tipe].h/2+rand(2,10);
+        /* By 'n muur val die standaardplek (site.y+h/2) in die BUURSEL. Is daardie
+           buurman klaar, kom die draer nooit binne 12px nie en die bres word nooit
+           toegemaak nie — 'n stil dooiepunt. Kies 'n oop kant. */
+        if(GT[site.tipe].muur){const wp=muurWerkPunt(site);t.tx=wp[0];t.ty=wp[1];}
+        else{t.tx=site.x+rand(-14,14);t.ty=site.y+GT[site.tipe].h/2+rand(2,10);}
       }
     }else{
       if(stapNa(m,t.tx,t.ty,dt)){
@@ -1072,12 +1098,17 @@ function kiesBou(tipe){
   PLAAS=(PLAAS===tipe)?null:tipe;
   if(PLAAS){
     SPOOK.x=KAM.x;SPOOK.y=KAM.y+60;
-    wysPrompt('Tik waar hy moet staan, dan ✓ BOU.');
+    if(GT[PLAAS].muur){
+      MUUR.begin=null;muurSnapSpook();
+      wysPrompt(GT[PLAAS].enkel?'Tik waar die hek moet staan, dan ✓ BOU.'
+                               :'Tik die muur se begin, dan sy einde. Dan ✓ BOU.');
+    }else wysPrompt('Tik waar hy moet staan, dan ✓ BOU.');
   }else wysPrompt(null);
   bouBalk();
 }
 function bevestigBou(){
   if(!PLAAS)return;
+  if(muurBevestig())return;        // 'n muur word as LYN gele, nie as een blok nie
   if(!kanBou(PLAAS,SPOOK.x,SPOOK.y)){plToast('Kan nie daar bou nie.');return;}
   if(!kanBekostig(PLAAS)){plToast('Te min materiaal.');return;}
   /* Die koste word NIE hier afgetrek nie — die vragte word fisies van die hoop
@@ -1372,6 +1403,7 @@ document.getElementById('gkOpg').onclick=()=>{
 
 function tik(wx,wy){
   document.getElementById('glkaart').style.display='none';
+  if(PLAAS&&GT[PLAAS].muur){muurKlik(wx,wy);return;}   // muur: tik begin, dan einde
   if(PLAAS){SPOOK.x=wx;SPOOK.y=wy;return;}          // plasing: tik verskuif die spook
   if(dist2(wx,wy,KLOKPAAL.x+7,KLOKPAAL.y+14)<52*52){luiKlok();bouBalk();return;}
   if(MODUS!=='merk'){
@@ -1405,6 +1437,7 @@ function update(dt){
   if(wilBrand&&!BRAAI_AAN){BRAAI_AAN=true;klank(180,.3,.14);paSê('Vuur is aan.');}
   if(!wilBrand&&BRAAI_AAN)BRAAI_AAN=false;
 
+  mureTik(dt);                     // die muur-indeks moet VARS wees voor mensTik loop
   for(const m of MENSE)mensTik(m,dt);
   gelukFaktore();                  // hou die kaart vars; die DRYF gebeur per dag
 
@@ -1513,12 +1546,16 @@ function update(dt){
     else if(doel&&!KLOKAAN&&d.jaag<=13){vx=doel.x-d.x;vy=doel.y-d.y;}
     else{vx=Math.cos(d.tred*.2);vy=Math.sin(d.tred*.2);}
     const l=Math.hypot(vx,vy)||1;
+    const dox=d.x, doy=d.y;
     d.x+=vx/l*16*dt;d.y+=vy/l*16*dt;
+    dwalerMuur(d,dox,doy,dt);      // 'n muur stop hom — en dan begin hy kap
     /* Die stoep is VEILIG: 'n mens wat klaar geskuil het, se skrik word nie
        hernu nie — anders is skuiling geen ontsnapping nie. */
     if(!KLOKAAN&&!d.weg)for(const m of MENSE){
       if(dist2(m.x,m.y,STOEP.x,STOEP.y)<70*70)continue;
-      if(dist2(d.x,d.y,m.x,m.y)<95*95)m.vlug=Math.max(m.vlug||0,3);
+      /* 'n Muur tussen hulle is WERKLIKE skuiling: die skrik dra nie deur klip nie. */
+      if(dist2(d.x,d.y,m.x,m.y)<95*95&&!muurTussen(d.x,d.y,m.x,m.y,false))
+        m.vlug=Math.max(m.vlug||0,3);
     }
     if(d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)>1300*1300)d.dood=true;
   }
@@ -1566,6 +1603,507 @@ function update(dt){
 }
 
 /* ============================== TEKEN ============================== */
+/* ============================================================================
+   MURE, HEKKE EN BRESSE
+   ============================================================================
+   HOEKOM 'n aparte stelsel bo-op GEB, en nie 'n nuwe lys nie: die vragte-ketting
+   (vat -> bou -> stadiums) is die siel van die spel. 'n Muur wat NIE aangedra
+   word nie, is nie 'n muur nie — hy's 'n knoppie. Elke muursegment bly dus 'n
+   gewone gebou in GEB; ons voeg net 'n 40x40 ROOSTER-INDEKS by sodat 'n segment
+   sy bure in O(1) kan lees. Dit gee ons hoeke, T-stukke en 'n vloei-vrye
+   blokkeringstoets sonder 'n enkele nuwe wêreldlys.
+
+   Die brug na die zombie-kant: 'n muur is HARD vir 'n dwaler (hy kap hom stukkend)
+   en SAG vir 'n mens (hy stap deur die hekhuis). Dieselfde rooster antwoord albei
+   vrae; net die `virMens`-vlag verskil.
+   ============================================================================ */
+const MUURGRID=40;                 // een segment = een sel
+const MUUR_MAKS=14;                // hoogstens 14 selle per ✓ BOU — 'n hanteerbare hap
+const MUUR_N=1, MUUR_O=2, MUUR_S=4, MUUR_W=8;
+const MUUR={kaart:new Map(), n:-1, omring:false, omringT:0, begin:null, klimSê:false};
+
+function gsleutel(gx,gy){return (gx<<12)|gy;}          // gy<4096, gx<4096: botsingsvry
+function gxVan(x){return Math.floor(x/MUURGRID);}
+function gyVan(y){return Math.floor(y/MUURGRID);}
+function selMidX(gx){return gx*MUURGRID+MUURGRID/2;}
+function selMidY(gy){return gy*MUURGRID+MUURGRID/2;}
+function isMuurT(t){return !!(GT[t]&&GT[t].muur);}
+
+/* Die indeks word herbou wanneer GEB van grootte verander — goedkoop (een lus oor
+   die geboue) en dit spaar ons om elke push-plek in die kode te moet onthou. */
+function muurIndeks(){
+  MUUR.kaart.clear();
+  for(const g of GEB){
+    if(!isMuurT(g.tipe))continue;
+    MUUR.kaart.set(gsleutel(gxVan(g.x),gyVan(g.y)),g);
+  }
+  MUUR.n=GEB.length; MUUR.omringT=0;
+}
+function muurSel(gx,gy){return MUUR.kaart.get(gsleutel(gx,gy))||null;}
+/* Solied = klaar gebou. 'n Halfgeboude muur laat almal deur; anders sluit 'n
+   bouspan homself uit by sy eie bousite. Die hek is solied vir zombies, oop
+   vir mense — dit is die hele punt van die hekhuis. */
+function muurSolied(gx,gy,virMens){
+  const g=MUUR.kaart.get(gsleutel(gx,gy));
+  if(!g||!g.klaar)return null;
+  if(virMens&&GT[g.tipe].hek)return null;
+  return g;
+}
+function muurPunt(x,y,virMens){return muurSolied(gxVan(x),gyVan(y),virMens);}
+function muurBure(g){
+  const gx=gxVan(g.x),gy=gyVan(g.y);let b=0;
+  if(muurSel(gx,gy-1))b|=MUUR_N;
+  if(muurSel(gx+1,gy))b|=MUUR_O;
+  if(muurSel(gx,gy+1))b|=MUUR_S;
+  if(muurSel(gx-1,gy))b|=MUUR_W;
+  return b;
+}
+function muurTal(){let n=0;for(const g of MUUR.kaart.values())if(g.klaar)n++;return n;}
+
+/* Loop 'n reguit lyn deur 'n solied sel? Ons monster elke 14px — fyner as die
+   helfte van 'n sel, dus kan geen segment tussenin wegglip nie. */
+function muurTussen(x1,y1,x2,y2,virMens){
+  const dx=x2-x1,dy=y2-y1,d=Math.hypot(dx,dy);
+  if(d<1)return null;
+  const n=Math.min(72,Math.ceil(d/14));
+  for(let i=1;i<=n;i++){
+    const t=i/n;
+    const g=muurPunt(x1+dx*t,y1+dy*t,virMens);
+    if(g)return g;
+  }
+  return null;
+}
+
+/* ---------- IS DIE WERF OMRING? ----------
+   Vloedvul vanaf die werf oor die rooster. Bereik ons die kaartrand, is daar 'n
+   gat. Dit is die goedkoop weergawe van 'n vloeiveld: ons vra nie WAAR die pad
+   loop nie, net OF een bestaan. 80x60 selle, een keer per sekonde. */
+const MGW=Math.ceil(WW/MUURGRID), MGH=Math.ceil(WH/MUURGRID);
+const _mvlag=new Uint8Array(MGW*MGH), _mry=new Int32Array(MGW*MGH);
+function muurOmring(){
+  if(muurTal()<8)return false;                    // te min mure om enigiets te sluit
+  const sx=gxVan(WERF.x), sy=gyVan(WERF.y);
+  if(muurSolied(sx,sy,false))return false;
+  _mvlag.fill(0);
+  let kop=0,stert=0;
+  const s=sx+sy*MGW; _mvlag[s]=1; _mry[stert++]=s;
+  while(kop<stert){
+    const i=_mry[kop++], gx=i%MGW, gy=(i/MGW)|0;
+    if(gx<=0||gy<=0||gx>=MGW-1||gy>=MGH-1)return false;   // die buitewêreld bereik
+    for(let d=0;d<4;d++){
+      const nx=gx+(d===1?1:d===3?-1:0), ny=gy+(d===0?-1:d===2?1:0);
+      const j=nx+ny*MGW;
+      if(_mvlag[j])continue;
+      _mvlag[j]=1;
+      if(!muurSolied(nx,ny,false))_mry[stert++]=j;
+    }
+  }
+  return true;
+}
+
+/* ---------- SKADE EN BRESSE ---------- */
+function muurHpMaks(g){return GT[g.tipe].hp||90;}
+function muurSkade(g,n){
+  if(!g||!g.klaar)return;
+  const mx=muurHpMaks(g);
+  g.hp=(g.hp===undefined?mx:g.hp)-n;
+  g.skudT=.20;
+  spanne(g.x+rand(-13,13),g.y-10,2,GT[g.tipe].klipMuur?'#9aa0a2':'#c9b06a');
+  klank(115+R()*35,.06,.085);
+  if(g.hp<=0)muurBreek(g);
+}
+/* 'n Bres is NIE 'n verwyderde gebou nie — dis 'n BOUSITE. Dieselfde mense loop
+   dieselfde vragte aan om hom toe te maak. Ons los een stadium se werk staan
+   sodat 'n gat vinnig gestop kan word, maar nooit gratis nie. */
+function muurBreek(g){
+  const k=GT[g.tipe].koste;
+  g.klaar=false; g.wasKlaar=false; g.hp=0;
+  g.stadium=1; g.verbruik=1;
+  g.gelewer=Math.min(1,stKoste(g.tipe));
+  g.gelewerH=Math.min(1,k.hout||0);
+  g.gelewerK=(k.hout?0:Math.min(1,k.klip||0));
+  g.opPad=0; g.opPadH=0; g.opPadK=0; g.werk=0; g.bouer=null;
+  spanne(g.x,g.y-8,16,'#8a6f3f'); klank(78,.32,.2);
+  plToast('’n Muur het gebreek!');
+  paSê(GT[g.tipe].hek?'Die hek is deur!':'Daar’s ’n gat in die muur!');
+  MUUR.omringT=0; persistSoon();
+}
+
+/* ---------- BEWEGING ----------
+   Harde stop met as-skeiding: 'n lyf wat 'n muur tref, gly langs hom af eerder
+   as om te tril. Ons stoot terug na die vorige posisie op die as wat gebots het. */
+function muurStoot(e,ox,oy,virMens){
+  const g=muurPunt(e.x,e.y,virMens);
+  if(!g)return null;
+  if(!muurPunt(ox,e.y,virMens)){e.x=ox;return g;}
+  if(!muurPunt(e.x,oy,virMens)){e.y=oy;return g;}
+  if(!muurPunt(ox,oy,virMens)){e.x=ox;e.y=oy;return g;}
+  /* Albei kante vas — hy staan IN die sel (bv. die muur is om hom gebou).
+     Skuif hom by die naaste rand uit; nooit vasgevang nie. */
+  const cx=selMidX(gxVan(e.x)), cy=selMidY(gyVan(e.y));
+  const dx=e.x-cx, dy=e.y-cy;
+  if(Math.abs(dx)>=Math.abs(dy))e.x=cx+(dx<0?-1:1)*(MUURGRID/2+8);
+  else e.y=cy+(dy<0?-1:1)*(MUURGRID/2+8);
+  return g;
+}
+function naasteHek(ax,ay,bx,by){
+  let beste=null,bd=1e12;
+  for(const g of MUUR.kaart.values()){
+    if(!g.klaar||!GT[g.tipe].hek)continue;
+    const d=Math.hypot(g.x-ax,g.y-ay)+Math.hypot(g.x-bx,g.y-by);
+    if(d<bd){bd=d;beste=g;}
+  }
+  return beste;
+}
+/* Twee aanloop-punte: een aan die kant waar die stapper is, een aan die kant waar
+   sy doel is. Die deurgang staan LOODREG op die muur se rigting. */
+function hekPunte(p,ax,ay,bx,by){
+  const hor=!!(muurBure(p)&(MUUR_O|MUUR_W));   // muur loop O-W -> stap N-S deur
+  const d=30;
+  let n,v;
+  if(hor){
+    const sn=(ay>p.y)?1:-1; let sv=(by>p.y)?1:-1;
+    if(sv===sn)sv=-sn;                          // altyd deur, nooit om nie
+    n=[p.x,p.y+sn*d]; v=[p.x,p.y+sv*d];
+  }else{
+    const sn=(ax>p.x)?1:-1; let sv=(bx>p.x)?1:-1;
+    if(sv===sn)sv=-sn;
+    n=[p.x+sn*d,p.y]; v=[p.x+sv*d,p.y];
+  }
+  return [n[0],n[1],v[0],v[1]];
+}
+/* Geen padvinding nie — 'n LYNTOETS plus een tussenpunt. Dit is genoeg omdat die
+   enigste ondeurdringbare ding op die kaart 'n muur is, en 'n muur het altyd 'n
+   hek (of anders klim hulle oor; sien onder). Ons toets hoogstens 2x per sekonde
+   per mens, want die toets is die duurste ding in die stelsel. */
+function muurOmpad(m,tx,ty,dt){
+  if(!MUUR.kaart.size)return null;
+  if(m.hekP){
+    m.hekT-=dt;
+    if(!m.hekP.klaar||m.hekT<=0)m.hekP=null;
+    else{
+      if(dist2(m.x,m.y,m.hekX,m.hekY)<22*22){
+        if(m.hekF===0){m.hekF=1;m.hekX=m.hekQ[2];m.hekY=m.hekQ[3];}
+        else m.hekP=null;
+      }
+      if(m.hekP)return [m.hekX,m.hekY];
+    }
+  }
+  m.hekS=(m.hekS||0)-dt;
+  if(m.hekS>0)return null;
+  m.hekS=0.5+R()*0.3;
+  /* Die doel self lê in 'n muur (iemand het bo-op 'n staanplek gebou). Nooit
+     vasdraai nie: laat hom een keer oorklim. */
+  if(muurPunt(tx,ty,true)){m.klim=Math.max(m.klim||0,4);return null;}
+  if(!muurTussen(m.x,m.y,tx,ty,true))return null;
+  const p=naasteHek(m.x,m.y,tx,ty);
+  if(!p){
+    /* GEEN HEK NIE. Ons weier om die simulasie te laat vashaak: hy klim oor.
+       Die speler kry een keer te hore hoekom dit lelik lyk. */
+    m.klim=Math.max(m.klim||0,8);
+    if(!MUUR.klimSê){MUUR.klimSê=true;plToast('Hulle klim oor — bou ’n hekhuis.');
+      paSê('Ons het ’n hek nodig, nie ’n kraal nie.');}
+    return null;
+  }
+  m.hekQ=hekPunte(p,m.x,m.y,tx,ty);
+  m.hekP=p; m.hekF=0; m.hekX=m.hekQ[0]; m.hekY=m.hekQ[1]; m.hekT=26;
+  return [m.hekX,m.hekY];
+}
+/* Waar staan 'n draer om by 'n muur-bousite af te laai? Die standaardplek
+   (site.y + h/2) val in die BUURSEL — as daardie buurman klaar is, kom die draer
+   nooit binne 12px nie en die bres word nooit toegemaak nie. Kies 'n oop kant. */
+function muurWerkPunt(g){
+  const gx=gxVan(g.x), gy=gyVan(g.y);
+  const kante=[[0,1],[-1,0],[1,0],[0,-1]];
+  for(const [ox,oy] of kante){
+    if(muurSolied(gx+ox,gy+oy,true))continue;
+    return [g.x+ox*30+rand(-7,7), g.y+oy*30+rand(-7,7)];
+  }
+  return [g.x+rand(-8,8), g.y+8];
+}
+/* Die dwaler se antwoord op 'n muur: hy kap. 4 skade elke 1.1s ~ 3.6/s.
+   Palissade (90) val in ~25s, klipmuur (240) in ~66s, hekhuis (300) in ~83s.
+   Mure koop TYD; hulle is nie ewig nie. */
+function dwalerMuur(d,ox,oy,dt){
+  if(d.weg){d.kap=0;return;}
+  const g=muurStoot(d,ox,oy,false);
+  if(!g){d.kap=0;return;}
+  d.kap=(d.kap||0)+dt;
+  if(d.kap>=1.1){d.kap=0;muurSkade(g,4);}
+}
+
+/* ---------- PER-RAAM ---------- */
+function mureTik(dt){
+  if(MUUR.n!==GEB.length)muurIndeks();
+  for(const g of MUUR.kaart.values()){
+    const mx=muurHpMaks(g);
+    if(g.hp===undefined)g.hp=g.klaar?mx:0;
+    /* Voltooi (of herstel) -> vol gesondheid. Dit vang die eerste bou, die
+       herbou ná 'n bres, én 'n ou stoorlêer sonder hp — sonder om mensTik aan
+       te raak. */
+    if(g.klaar&&!g.wasKlaar){g.hp=mx;g.wasKlaar=true;}
+    if(!g.klaar)g.wasKlaar=false;
+    if(g.skudT>0)g.skudT-=dt;
+    if(GT[g.tipe].hek){
+      let naby=false;
+      for(const m of MENSE)if(dist2(m.x,m.y,g.x,g.y)<48*48){naby=true;break;}
+      const doel=(g.klaar&&naby)?1:0, ou=g.hekOop||0;
+      g.hekOop=ou+clamp(doel-ou,-dt*2.0,dt*2.0);
+      if(ou<.03&&g.hekOop>=.03)klank(150,.14,.05);       // die hek kraak oop
+    }
+  }
+  for(const m of MENSE)if(m.klim>0)m.klim-=dt;
+  MUUR.omringT-=dt;
+  if(MUUR.omringT<=0){MUUR.omringT=1.0;MUUR.omring=muurOmring();}
+}
+
+/* ---------- PLASING: SLEEP 'N LYN ---------- */
+function muurSnapSpook(){
+  SPOOK.x=selMidX(gxVan(SPOOK.x));
+  SPOOK.y=selMidY(gyVan(SPOOK.y));
+}
+function muurLynSelle(){
+  const ex=gxVan(SPOOK.x), ey=gyVan(SPOOK.y);
+  if(!MUUR.begin||GT[PLAAS].enkel)return [[ex,ey]];
+  const [bx,by]=MUUR.begin;
+  const selle=[[bx,by]];
+  let gx=bx, gy=by;
+  const sx=ex>bx?1:ex<bx?-1:0, sy=ey>by?1:ey<by?-1:0;
+  while(gx!==ex&&selle.length<MUUR_MAKS){gx+=sx;selle.push([gx,gy]);}
+  while(gy!==ey&&selle.length<MUUR_MAKS){gy+=sy;selle.push([gx,gy]);}
+  return selle;
+}
+function muurKlik(wx,wy){
+  const gx=gxVan(wx), gy=gyVan(wy);
+  SPOOK.x=selMidX(gx); SPOOK.y=selMidY(gy);
+  if(GT[PLAAS].enkel){MUUR.begin=null;return;}
+  if(!MUUR.begin||(MUUR.begin[0]===gx&&MUUR.begin[1]===gy)){
+    MUUR.begin=[gx,gy];
+    wysPrompt('Nou die ander punt — dan ✓ BOU.');
+  }
+  klank(430,.04,.06);
+}
+/* Word deur bevestigBou() eerste geroep. Gee true terug as ons dit hanteer het. */
+function muurBevestig(){
+  if(!PLAAS||!GT[PLAAS].muur)return false;
+  const tipe=PLAAS, selle=muurLynSelle();
+  let n=0;
+  for(const [gx,gy] of selle){
+    const x=selMidX(gx), y=selMidY(gy);
+    if(MUUR.kaart.get(gsleutel(gx,gy)))continue;       // reeds 'n muur daar
+    if(!kanBou(tipe,x,y))continue;
+    GEB.push(nuweGebou(tipe,x,y)); n++;
+  }
+  if(!n){plToast('Kan nie daar bou nie.');return true;}
+  muurIndeks();
+  klank(420,.1,.12); S.g1=1;
+  if(!S.eersteBou){S.eersteBou=1;paSê('Reg. Kom ons bou hom.');}
+  plToast(n+' × '+GT[tipe].naam+' aangelê.');
+  MUUR.begin=null;
+  /* Die muur-gereedskap bly AAN — 'n mens bou 'n muur in hale, nie in een klik nie. */
+  if(GT[tipe].enkel){PLAAS=null;wysPrompt(null);}
+  else wysPrompt('Tik die volgende muur se begin, dan sy einde.');
+  bouBalk(); persistSoon();
+  return true;
+}
+/* Die spook vir 'n muurlyn: elke sel apart, met die vragte-telling by die punt. */
+function muurSpook(){
+  const G2=GT[PLAAS], selle=muurLynSelle();
+  let vragte=0;
+  for(const [gx,gy] of selle){
+    const x=selMidX(gx), y=selMidY(gy);
+    const besit=MUUR.kaart.get(gsleutel(gx,gy));
+    const ok=!besit&&kanBou(PLAAS,x,y);
+    if(ok)vragte+=stKoste(PLAAS);
+    ctx.fillStyle=ok?'rgba(127,201,94,.22)':'rgba(192,80,56,.28)';
+    ctx.fillRect(x-19,y-19,38,38);
+    ctx.strokeStyle=ok?'#7fc95e':'#c05038';ctx.lineWidth=2.5;ctx.setLineDash([7,5]);
+    ctx.strokeRect(x-19,y-19,38,38);ctx.setLineDash([]);
+  }
+  if(MUUR.begin){
+    const [bx,by]=MUUR.begin;
+    ctx.fillStyle='#e0b64f';
+    ctx.fillRect(selMidX(bx)-5,selMidY(by)-5,10,10);
+  }
+  ctx.font='22px VT323,monospace';ctx.textAlign='center';
+  ctx.fillStyle='#e0b64f';
+  ctx.fillText(G2.ikoon+' '+selle.length+' · '+vragte+' vragte',SPOOK.x,SPOOK.y-28);
+}
+
+/* ---------- DIE VERWER ----------
+   Die truuk: elke sel word 'n MIDDELBLOK plus 'n ARM na elke buurman. Ons teken
+   ALLE voorvlakke, dan ALLE bo-vlakke. Omdat die paalhoogte presies twee keer die
+   halwe dikte is, dek die bo-vlak van die suidelike sel altyd die voorvlak van
+   die noordelike — 'n N-S loop lees as een deurlopende muur, en 'n hoek of T-stuk
+   val vanself uit dieselfde reël uit. Geen tabel van 16 tekeninge nodig nie. */
+function tekenMuur(g,f){
+  const G2=GT[g.tipe], k=G2.mkleur;
+  const b=muurBure(g);
+  const skud=(g.skudT>0)?Math.sin(g.skudT*70)*2.2:0;
+  const cx=g.x+skud, cy=g.y;
+  const mx=muurHpMaks(g);
+  const heel=g.klaar?clamp((g.hp===undefined?mx:g.hp)/mx,0,1):0;
+  /* Hoogte volg SLEGS die bouvordering. Skade vreet nie hoogte nie — dit sou die
+     bo-vlak se naatdekking breek en elke stukkende sel 'n donker streep gee. */
+  const H=g.klaar?G2.hoog:Math.max(4,Math.round(G2.hoog*(0.28+f*0.72)));
+  const T=G2.dik, HK=MUURGRID/2;
+  const dele=[[cx-T,cy-T,T*2,T*2]];
+  if(b&MUUR_N)dele.push([cx-T,cy-HK,T*2,HK-T]);
+  if(b&MUUR_S)dele.push([cx-T,cy+T,T*2,HK-T]);
+  if(b&MUUR_W)dele.push([cx-HK,cy-T,HK-T,T*2]);
+  if(b&MUUR_O)dele.push([cx+T,cy-T,HK-T,T*2]);
+  const reguit=(b===(MUUR_O|MUUR_W))||(b===(MUUR_N|MUUR_S));
+
+  // grondskadu
+  ctx.fillStyle='rgba(16,22,11,.30)';
+  for(const [x,y,w,h] of dele)ctx.fillRect(x+5,y+5,w,h);
+  // voorvlakke (donker) — dan bo-vlakke (lig), altyd in daardie volgorde
+  ctx.fillStyle=k[1];
+  for(const [x,y,w,h] of dele)ctx.fillRect(x,y+h-H,w,H);
+  ctx.fillStyle=k[0];
+  for(const [x,y,w,h] of dele)ctx.fillRect(x,y-H,w,h);
+
+  /* 'n N-S loop word van die SYKANT gesien: sy bo-vlak is die muur se flank, nie
+     sy loopvlak nie. Die tekstuur moet dus van orientasie verskil, anders lyk 'n
+     vertikale muur soos 'n leer wat plat le. */
+  const vert=!!(b&(MUUR_N|MUUR_S))&&!(b&(MUUR_O|MUUR_W));
+  if(G2.klipMuur){
+    ctx.strokeStyle='rgba(20,26,14,.34)';ctx.lineWidth=1.3;
+    for(const [x,y,w,h] of dele){
+      const y0=vert?y-H:y+h-H, y1=y+h;
+      for(let ry=y0+7;ry<y1;ry+=7){ctx.beginPath();ctx.moveTo(x,ry);ctx.lineTo(x+w,ry);ctx.stroke();}
+      let ri=0;
+      for(let ry=y0;ry<y1;ry+=7){
+        for(let px=x+((ri%2)?4:9);px<x+w;px+=10){
+          ctx.beginPath();ctx.moveTo(px,ry);ctx.lineTo(px,Math.min(ry+7,y1));ctx.stroke();}
+        ri++;
+      }
+    }
+    ctx.fillStyle=k[2];                                    // kantele
+    for(const [x,y,w,h] of dele){
+      if(vert)for(let py=y-H;py<y-H+h-4;py+=9){ctx.fillRect(x-3,py,4,5);ctx.fillRect(x+w-1,py,4,5);}
+      else for(let px=x;px<x+w-3;px+=9)ctx.fillRect(px,y-H-3,5,4);
+    }
+  }else{
+    ctx.strokeStyle=k[2];ctx.lineWidth=1.6;                // pale
+    for(const [x,y,w,h] of dele){
+      const y0=vert?y-H:y+h-H;
+      for(let px=x+3;px<x+w-1;px+=6){
+        ctx.beginPath();ctx.moveTo(px,y0+1.5);ctx.lineTo(px,y+h-1);ctx.stroke();}
+    }
+    if(!vert){ctx.fillStyle=k[2];                          // paalkoppe op die loopvlak
+      for(const [x,y,w] of dele)ctx.fillRect(x,y-H,w,3);}
+  }
+  ctx.strokeStyle='rgba(14,20,10,.72)';ctx.lineWidth=2;
+  for(const [x,y,w,h] of dele)ctx.strokeRect(x,y+h-H,w,H);
+
+  // hoek-, T- of endpaal: die stuk wat 'n muur soos 'n muur laat lees
+  if(!reguit&&!G2.hek){
+    const cb=T+2, ty=cy-cb-H-4;
+    ctx.fillStyle=k[1];ctx.fillRect(cx-cb,cy+cb-H-4,cb*2,H+4);
+    ctx.fillStyle=k[0];ctx.fillRect(cx-cb,ty,cb*2,cb*2);
+    if(!G2.klipMuur){
+      ctx.fillStyle=k[2];ctx.beginPath();
+      ctx.moveTo(cx-cb,ty);ctx.lineTo(cx,ty-8);ctx.lineTo(cx+cb,ty);ctx.closePath();ctx.fill();
+    }else{
+      ctx.fillStyle=k[2];ctx.fillRect(cx-cb,ty-3,cb*2,4);
+    }
+    ctx.strokeStyle='rgba(14,20,10,.75)';ctx.lineWidth=2;
+    ctx.strokeRect(cx-cb,ty,cb*2,cb*2);
+    ctx.strokeRect(cx-cb,cy+cb-H-4,cb*2,H+4);
+  }
+
+  // ---- DIE HEKHUIS ----
+  if(G2.hek){
+    const hor=!!(b&(MUUR_O|MUUR_W))||!(b&(MUUR_N|MUUR_S));
+    const oop=g.klaar?(g.hekOop||0):0;
+    const torings=hor?[[cx-16,cy],[cx+16,cy]]:[[cx,cy-16],[cx,cy+16]];
+    for(const [tx2,ty2] of torings){                       // noord eerste = agter
+      ctx.fillStyle=k[1];ctx.fillRect(tx2-9,ty2+9-H-11,18,H+11);
+      ctx.fillStyle=k[0];ctx.fillRect(tx2-9,ty2-9-H-11,18,18);
+      ctx.strokeStyle='rgba(14,20,10,.78)';ctx.lineWidth=2;
+      ctx.strokeRect(tx2-9,ty2-9-H-11,18,18);
+      ctx.strokeRect(tx2-9,ty2+9-H-11,18,H+11);
+      ctx.fillStyle=k[2];
+      for(let px=tx2-9;px<tx2+8;px+=6)ctx.fillRect(px,ty2-9-H-14,4,4);
+    }
+    if(hor){                                   // deurgang N-S: die deur op die voorvlak
+      const dw=18, dh=Math.max(8,Math.round(H*.74)), dy=cy+T-dh;
+      ctx.fillStyle='#150f06';ctx.fillRect(cx-dw/2,dy,dw,dh);
+      const bl=(dw/2)*(1-oop);
+      if(bl>.6){
+        ctx.fillStyle=k[2];
+        ctx.fillRect(cx-dw/2,dy,bl,dh);ctx.fillRect(cx+dw/2-bl,dy,bl,dh);
+        ctx.strokeStyle='rgba(14,20,10,.85)';ctx.lineWidth=1.6;
+        ctx.strokeRect(cx-dw/2,dy,bl,dh);ctx.strokeRect(cx+dw/2-bl,dy,bl,dh);
+      }
+    }else{                                     // deurgang O-W: die gat lê op die bo-vlak
+      const dw=Math.max(8,Math.round(T*1.5)), dh=20, dx0=cx-dw/2, dy0=cy-dh/2-H;
+      ctx.fillStyle='#150f06';ctx.fillRect(dx0,dy0,dw,dh);
+      const bl=(dh/2)*(1-oop);
+      if(bl>.6){
+        ctx.fillStyle=k[2];
+        ctx.fillRect(dx0,dy0,dw,bl);ctx.fillRect(dx0,dy0+dh-bl,dw,bl);
+        ctx.strokeStyle='rgba(14,20,10,.85)';ctx.lineWidth=1.6;
+        ctx.strokeRect(dx0,dy0,dw,bl);ctx.strokeRect(dx0,dy0+dh-bl,dw,bl);
+      }
+    }
+    if(g.klaar){                                           // die vlagpaal — 'n baken
+      const py=cy-9-H-11;
+      ctx.strokeStyle='#4e3c22';ctx.lineWidth=2.5;
+      ctx.beginPath();ctx.moveTo(cx,py);ctx.lineTo(cx,py-22);ctx.stroke();
+      const wap=Math.sin(performance.now()/240)*2.2;
+      ctx.fillStyle='#e0b64f';ctx.beginPath();
+      ctx.moveTo(cx,py-22);ctx.lineTo(cx+13,py-18+wap);ctx.lineTo(cx,py-13);
+      ctx.closePath();ctx.fill();
+    }
+  }
+
+  // ---- SKADE ----
+  if(g.klaar&&heel<.999){
+    const gapse=1+Math.round((1-heel)*4);
+    ctx.fillStyle='rgba(14,18,9,.88)';
+    for(let i=0;i<gapse;i++){
+      const t=Rw(i*3.7+g.x*.011+g.y*.017);
+      const px=cx-HK+4+t*(MUURGRID-12), ph=4+t*7;
+      ctx.fillRect(px,cy-T-H,5,ph);
+      ctx.fillRect(px+1,cy+T-H+2,3,4+ph*.6);
+    }
+    ctx.fillStyle='rgba(10,14,7,.72)';ctx.fillRect(cx-17,cy-H-19,34,6);
+    ctx.fillStyle=heel>.5?'#7fc95e':heel>.25?'#e0b64f':'#c05038';
+    ctx.fillRect(cx-16,cy-H-18,32*heel,4);
+  }
+  // ---- ONVOLTOOI: penne, materiaal, vorderingbalk (soos elke ander bousite) ----
+  if(!g.klaar){
+    ctx.strokeStyle='#c9b06a';ctx.lineWidth=1.6;ctx.setLineDash([5,5]);
+    ctx.strokeRect(cx-HK+2,cy-HK+2,MUURGRID-4,MUURGRID-4);ctx.setLineDash([]);
+    const oor=g.gelewer-g.verbruik;
+    for(let i=0;i<Math.min(oor,3);i++){
+      ctx.fillStyle='#8a6f3f';ctx.fillRect(cx-16+i*12,cy+HK-2,15,6);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.4;ctx.strokeRect(cx-16+i*12,cy+HK-2,15,6);
+    }
+    const p=(g.stadium+(g.gelewer>=stDrempel(g.tipe,g.stadium)?g.werk/2.0:0))/ST_N;
+    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(cx-HK,cy-HK-13,MUURGRID,7);
+    ctx.fillStyle='#e0b64f';ctx.fillRect(cx-HK+1,cy-HK-12,(MUURGRID-2)*clamp(p,0,1),5);
+  }
+}
+
+/* ---- MURE deur die REGISTERS (nie deur redigering van gelukFaktore/persist nie) ---- */
+GLBRONNE.push(rye=>{
+  /* +3 is doelbewus klein langs die braai se +4: 'n ring van 28 selle kos 56 vragte — 'n
+     projek van dae — en die WERKLIKE beloning is dat dwalers buite bly, nie die syfer nie.
+     Kategorie 'veiligheid' sodat dit binne daardie klem [-9,+4] meeding. */
+  if(MUUR.omring)rye.push(['Die werf is omring',+3,'veiligheid']);
+  else if(muurTal()>=6)rye.push(['’n Muur om agter te skuil',+1,'veiligheid']);
+});
+GEBVELDE.push((g,r)=>{if(GT[g.tipe].muur&&g.hp!==undefined)r.hp=Math.round(g.hp);});
+GEBLAAI.push((g,o)=>{
+  /* 'n Halfstukkende muur bly halfstukkend oor 'n herlaai — anders herstel 'n beleg
+     homself terwyl die speler die bladsy verfris. Geen hp = "onbekend": mureTik vul dan
+     vol gesondheid in. */
+  if(o.hp!==undefined&&o.hp>=0){g.hp=o.hp;g.wasKlaar=!!o.k;}
+});
+
 function tekenMens(m){
   const wip=Math.sin(m.tred)*(m.dra?1.4:1.0);
   const x=m.x,y=m.y;
@@ -1647,6 +2185,7 @@ function tekenGebou(g){
     ctx.strokeStyle='#e8c96a';ctx.lineWidth=2.4/z;ctx.setLineDash([7/z,5/z]);
     ctx.strokeRect(x-r,y-r,w+2*r,h+2*r);ctx.setLineDash([]);
   }
+  if(G2.muur){tekenMuur(g,f);return;}   // mure teken hulself — hulle lees hul bure
   // werpskadu
   ctx.fillStyle='rgba(16,22,11,.28)';
   ctx.beginPath();ctx.moveTo(x+w*.16,y+h);ctx.lineTo(x+w+6,y+h);
@@ -1654,16 +2193,6 @@ function tekenGebou(g){
   /* VLAK-PITTE: 'n opgradering wat jy nie kan SIEN nie, het nie gebeur nie.
      Ons verf hulle heel laaste in die funksie (sien vlakMerk hieronder) — maar die
      palissade keer vroeg terug, so dié een kry niks. */
-  if(G2.muur){                                  // palissade: pale
-    const n=Math.max(3,Math.round(w/9));
-    for(let i=0;i<n;i++){
-      const px=x+3+i*(w-6)/(n-1), hh=h*(.55+Rw(i+g.x)*.2)*(0.4+f*0.6);
-      ctx.fillStyle='#6f5636';ctx.fillRect(px-3,y+h-hh,6,hh);
-      ctx.fillStyle='#8a6f3f';ctx.fillRect(px-3,y+h-hh,2,hh);
-      ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;ctx.strokeRect(px-3,y+h-hh,6,hh);
-    }
-    return;
-  }
   if(f<=0.01){                                  // net penne en tou
     ctx.strokeStyle='#c9b06a';ctx.lineWidth=1.8;ctx.setLineDash([5,5]);
     ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
@@ -1879,7 +2408,8 @@ function render(){
   }
   tekenHoop('hout');tekenHoop('klip');if(!hetSpens())tekenHoop('kos');
   // die spook
-  if(PLAAS){
+  if(PLAAS&&GT[PLAAS].muur)muurSpook();   // 'n muur wys as LYN, nie as een blok nie
+  else if(PLAAS){
     const G2=GT[PLAAS],ok=kanBou(PLAAS,SPOOK.x,SPOOK.y)&&kanBekostig(PLAAS);
     ctx.fillStyle=ok?'rgba(127,201,94,.25)':'rgba(192,80,56,.3)';
     ctx.fillRect(SPOOK.x-G2.w/2,SPOOK.y-G2.h/2,G2.w,G2.h);
