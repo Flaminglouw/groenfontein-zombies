@@ -236,7 +236,7 @@ function drawMini(c,id,x,y,h,mode,ph,face,dieP){
   else if(mode==='attack'){S=sm.states.attack;fi=Math.floor((now/90+ph*7)%S.f);}
   else if(mode==='move'){S=sm.states.move;fi=Math.floor((now/85+ph*7)%S.f);}
   else{S=sm.states.idle;fi=Math.floor((now/150+ph*7)%S.f);}
-  const FILL={louw:.78,pa:.909,danie:.85,altus:.926}; // lyf-vulling van elke sel; anders marsjeer Louw 17% korter as Altus
+  const FILL={louw:.766,pa:.909,danie:.85,altus:.926}; // lyf-vulling van elke sel; anders marsjeer Louw 17% korter as Altus
   const DH=h/(FILL[id]||1),DW=DH*sm.cellw/sm.cellh;
   c.save();c.translate(x,y);
   if(face<0)c.scale(-1,1);

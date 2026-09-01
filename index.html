@@ -6136,10 +6136,10 @@ let LB={scores:[]}, lbShared=false, lbWritable=null;
 const CHAR_LETTER={louw:'L',altus:'A',danie:'D',pa:'P'};
 const CHAR_NAME={louw:'Louw',altus:'Altus',danie:'Danie',pa:'Pa'};
 const HEAD_CROP={
- louw:{fx:0.332,fy:0.328,fw:0.300,fh:0.383},
+ louw:{fx:0.360,fy:0.235,fw:0.300,fh:0.383}, // op die gesig, nie die baard/hamer nie
  pa:{fx:0.349,fy:0.091,fw:0.296,fh:0.384},
- danie:{fx:0.376,fy:0.158,fw:0.238,fh:0.289},
- altus:{fx:0.401,fy:0.082,fw:0.272,fh:0.315},
+ danie:{fx:0.376,fy:0.100,fw:0.238,fh:0.374}, // vierkantig in bron-px sodat die gesig nie in die 26x26-teël saamgedruk word nie
+ altus:{fx:0.401,fy:0.020,fw:0.272,fh:0.419},
 };
 function charHead(cid){
   const D=26,cv2=document.createElement('canvas');cv2.width=D;cv2.height=D;
