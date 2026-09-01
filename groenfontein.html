@@ -192,7 +192,7 @@ const KLIPBANK={x:1080,y:1720,r:120};      // die koppie se voet — waar klip g
 
 /* ============================== STOOR ============================== */
 const GF_KEY='gf_v2';
-let S={v:2,hout:0,klip:0,kos:6,hop:0,bier:0,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0,geluk:50,rant:2,
+let S={v:2,hout:0,klip:0,kos:40,hop:0,bier:0,dag:1,geb:[],g1:0,g3:0,mense:6,tyd:0,geluk:50,rant:2,
        goud:0,bel:1};   // goud = WERF-geld (belasting/mark); munte (lopies) bly in index.html en koop net die broers
 try{const s=JSON.parse(localStorage.getItem(GF_KEY));if(s&&typeof s==='object'&&s.v===2)S=Object.assign(S,s);}catch(e){}
 let persistT=0;
@@ -6033,6 +6033,10 @@ function stuurKommando(nes){
 function nesGelukRye(rye){
   let dreig=0,naby=0;
   for(const n of NESTE){
+    /* Net neste wat REEDS iets uitgestuur het (n.gesien) dreig. Gemeet in 'n vars speelloop:
+       sonder hierdie toets staan 'n nuwe speler by -8/dag vanaf die eerste tik (dak -2, braai -2,
+       nes -4) en die dorp loop leeg voor die eerste tuin staan. */
+    if(!n.gesien)continue;
     const d=nesAfstand(n);
     if(d<760){dreig+=NES_BANDE[n.band].dreig-2*(n.vlak-1);naby++;}
     else if(d<1150){dreig+=Math.round((NES_BANDE[n.band].dreig-2*(n.vlak-1))/2);naby++;}
