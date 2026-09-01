@@ -546,6 +546,11 @@ function naasteBoom(x,y,maks){
   }
   return beste;
 }
+/* EEN SPOEDPUNT. Vier kenmerke (vrees, mure, helde, held-vermoens) wou elk die spoed-reel
+   in stapNa "vervang" — sekwensieel toegepas oorleef net die laaste. Nou skryf 'n kenmerk
+   sy eie veld op die mens (m.aSpoed vir 'n aura, m.aTempo vir vrees/werkywer) en raak
+   stapNa nooit aan nie. */
+function spoedVan(m){return m.spd*((m.dra||m.help)?0.78:1)*(m.aSpoed||1)*(m.aTempo||1);}
 function stapNa(m,tx,ty,dt){
   const dx=tx-m.x,dy=ty-m.y,d=Math.hypot(dx,dy);
   if(d<12)return true;
@@ -563,7 +568,7 @@ function stapNa(m,tx,ty,dt){
       const vl=Math.hypot(vx,vy)||1; vx/=vl; vy/=vl;
     }
   }
-  const sp=m.spd*(m.dra?0.78:1);
+  const sp=spoedVan(m);
   m.x+=vx*sp*dt;m.y+=vy*sp*dt;
   m.rig=vx<0?-1:1;
   m.tred+=dt*(m.dra?6.4:7.4);
@@ -782,6 +787,16 @@ const RANTSOEN=[
   {naam:'Dubbel', mult:2,   gl:+8},
 ];
 let GLRYE=[];
+/* DIE GELUK-BEGROTING. Die 20-agent-hersiening het die som getel as al 17 kenmerke hul
+   rye byvoeg: die dagstap word ±110 op 'n 100-punt-as. Dan is die dryf-model 'n
+   PLAFON-model — geluk pen op 100 en elke straf in die spel is gratis. Twee dinge keer dit:
+   (a) 'n REGISTER: kenmerke doen GLBRONNE.push(rye=>rye.push([naam,delta,kat])) en
+       redigeer hierdie funksie NOOIT;
+   (b) 'n KLEM PER KATEGORIE voor die som — geriewe DING MEE in plaas van stapel, sodat die
+       speler kies watter gerief hy bou, en die dagstap self is geklem. */
+const GLBRONNE=[];
+const GLKAT={kos:[-10,8], dak:[-8,2], gerief:[-6,8], veiligheid:[-9,4], gebeurtenis:[-8,6]};
+const GLSTAP=14;                                   // maksimum |dryf| per dag
 function gelukFaktore(){
   const rye=[];
   const pop=MENSE.length, bed=beddens(), kos=voorraad('kos');
@@ -792,32 +807,41 @@ function gelukFaktore(){
   const misgeloop=hongerTel||hongerVorige;
   const rIdx=(kos<=0||misgeloop)?0:S.rant;
   const r=RANTSOEN[rIdx];
-  if(misgeloop)rye.push(['Honger — maaltye misgeloop',-8]);
-  else if(r.gl!==0)rye.push([kos<=0?'Niks om uit te deel nie':'Rantsoene: '+r.naam,r.gl]);
-  else rye.push(['Rantsoene: Normaal',0]);
+  if(misgeloop)rye.push(['Honger — maaltye misgeloop',-8,'kos']);
+  else if(r.gl!==0)rye.push([kos<=0?'Niks om uit te deel nie':'Rantsoene: '+r.naam,r.gl,'kos']);
+  else rye.push(['Rantsoene: Normaal',0,'kos']);
   // OORBEVOLKING — Stronghold se gedokumenteerde trap
   const buite=Math.max(0,pop-bed);
   if(buite>0){
     const d=buite<=7?-2:buite<=15?-4:buite<=23?-6:-6-2*Math.ceil((buite-23)/8);
-    rye.push([buite+' slaap buite',d]);
-  }else if(bed>0)rye.push(['Almal onder ’n dak',+2]);
+    rye.push([buite+' slaap buite',d,'dak']);
+  }else if(bed>0)rye.push(['Almal onder ’n dak',+2,'dak']);
   // DIE BRAAI — ons plaas se kroeg
   const br=braaiPlek();
   if(br){
     const vol=gGl(br);                        // vlak 1/2/3 -> 4/6/8
     rye.push([BRAAI_AAN?'Die braai brand'+(gVlak(br)>1?' (vlak '+gVlak(br)+')':'')
-                       :'’n Braaiplek staan', BRAAI_AAN?vol:Math.round(vol/4)]);
-  }else rye.push(['Geen braaiplek',-2]);
+                       :'’n Braaiplek staan', BRAAI_AAN?vol:Math.round(vol/4),'gerief']);
+  }else rye.push(['Geen braaiplek',-2,'gerief']);
   // VEILIGHEID
   const naby=DWALERS.filter(d=>!d.weg&&dist2(d.x,d.y,WERF.x,WERF.y)<460*460).length;
-  if(naby)rye.push([naby+' dwaler naby',-3*naby]);
+  if(naby)rye.push([naby+' dwaler naby',-3*naby,'veiligheid']);
   {                                            // die sterkste toring tel, nie die som nie
     let beste=null;
     for(const g of GEB)if(g.klaar&&GT[g.tipe].lig&&(!beste||gVlak(g)>gVlak(beste)))beste=g;
-    if(beste)rye.push(['Wagtoring hou wag'+(gVlak(beste)>1?' (vlak '+gVlak(beste)+')':''),gGl(beste)]);
+    if(beste)rye.push(['Wagtoring hou wag'+(gVlak(beste)>1?' (vlak '+gVlak(beste)+')':''),gGl(beste),'veiligheid']);
   }
+  for(const f of GLBRONNE)f(rye);              // kenmerke haak HIER in
   GLRYE=rye;
-  return rye.reduce((a,b)=>a+b[1],0);
+  return gelukSom(rye);
+}
+/* Klem per kategorie, dan die dagstap. 'n Ry sonder kategorie tel as 'gebeurtenis'. */
+function gelukSom(rye){
+  const per={};
+  for(const r of rye){const k=r[2]||'gebeurtenis';per[k]=(per[k]||0)+r[1];}
+  let som=0;
+  for(const k in per){const g=GLKAT[k]||GLKAT.gebeurtenis;som+=clamp(per[k],g[0],g[1]);}
+  return clamp(som,-GLSTAP,GLSTAP);
 }
 function dagDryf(){                       // een keer per spel-dag
   const som=gelukFaktore();
@@ -969,8 +993,8 @@ function bouBalk(){
 document.getElementById('hGeluk').onclick=()=>{
   const k=document.getElementById('glkaart');
   if(k.style.display==='block'){k.style.display='none';return;}
-  let h='',som=0;
-  for(const [naam,d] of GLRYE){som+=d;
+  let h='';const som=gelukSom(GLRYE);           // die geklemde som — wat WERKLIK more gebeur
+  for(const [naam,d] of GLRYE){
     h+='<div class="r"><span>'+naam+'</span><span class="'+(d>=0?'op':'af')+'">'+(d>0?'+':'')+d+'</span></div>';}
   h+='<div class="r" style="border-top:2px solid #5c4a2e;margin-top:6px;padding-top:6px">'+
      '<span>Môre skuif dit</span><span class="'+(som>=0?'op':'af')+'">'+(som>0?'+':'')+som+'</span></div>'+
@@ -1604,6 +1628,59 @@ function tekenHoop(soort){
   }
 }
 let laas=performance.now();
+/* VERWERS-REGISTER. Vyf kenmerke (neste, gevegte, kaserne, helde, held-vermoens) het elk
+   gese "voeg t===6 by" — en die laaste `else` was PA, nie 'n verstek nie. Twee daarvan
+   geintegreer en 'n zombie word as 'n held geverf. Nou vra 'n kenmerk sy eie nommer:
+     const T_NES=verwerId(tekenNes);   ...   dinge.push([y,T_NES,nes]);
+   en niemand redigeer die lus ooit weer nie. */
+function tekenHoender(d){
+  ctx.fillStyle='rgba(10,14,7,.3)';ctx.beginPath();ctx.ellipse(d.x,d.y+1,4,1.6,0,0,TAU);ctx.fill();
+  ctx.fillStyle='#ece5cc';ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.fill();
+  ctx.fillStyle='#c05038';ctx.fillRect(d.x+((d.vx>=0)?2:-3.4),d.y-8.5,1.6,1.8);
+  const pik=Math.sin(d.pik)>0.6?2:0;
+  ctx.fillStyle='#e0b64f';ctx.fillRect(d.x+((d.vx>=0)?3.4:-4.8),d.y-6+pik,1.6,1.2);
+  ctx.strokeStyle='rgba(20,24,14,.6)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.stroke();
+}
+function tekenDwaler(d){
+  const wip=Math.sin(d.tred)*1.6;
+  ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(d.x,d.y+2,8,3,0,0,TAU);ctx.fill();
+  ctx.save();ctx.translate(d.x,d.y+wip*.5);
+  ctx.fillStyle='#2b3a22';ctx.fillRect(-4,-6,3.5,7);ctx.fillRect(1,-6,3.5,7);
+  ctx.fillStyle='#4e6b34';ctx.fillRect(-5,-18,10,12);
+  ctx.fillStyle='rgba(226,240,180,.3)';ctx.fillRect(-5,-18,2.5,12);
+  ctx.fillStyle='#93a86c';ctx.fillRect(-4,-26,8,8);
+  ctx.fillStyle='#c04030';ctx.fillRect(-2.5,-23,2,2);ctx.fillRect(1,-23,2,2);
+  ctx.fillStyle='#4e6b34';ctx.fillRect(-9,-15+wip,4,3);ctx.fillRect(5,-15-wip,4,3);
+  ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+  ctx.strokeRect(-5,-18,10,12);ctx.strokeRect(-4,-26,8,8);
+  ctx.restore();
+}
+function tekenPa(){
+  ctx.save();ctx.translate(PA.x,PA.y);
+  ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(0,2,9,3.4,0,0,TAU);ctx.fill();
+  ctx.fillStyle='#2a1f12';ctx.fillRect(-4,-7,3.5,8);ctx.fillRect(1,-7,3.5,8);
+  ctx.fillStyle='#e8e6df';ctx.fillRect(-6,-21,12,14);
+  ctx.fillStyle='rgba(20,26,14,.18)';ctx.fillRect(2,-21,4,14);
+  ctx.fillStyle='#e2b18d';ctx.fillRect(-4.5,-29,9,8);
+  ctx.fillStyle='#d8d5cd';ctx.fillRect(-4.5,-31,9,3);
+  ctx.fillStyle='#ece5cc';ctx.fillRect(6,-18,5,6);
+  ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+  ctx.strokeRect(-6,-21,12,14);ctx.strokeRect(-4.5,-29,9,8);ctx.strokeRect(6,-18,5,6);
+  const stm=(PA.steam%1.6)/1.6;
+  ctx.fillStyle='rgba(236,229,204,'+(0.5*(1-stm))+')';
+  ctx.beginPath();ctx.arc(8.5+Math.sin(PA.steam*3)*2,-22-stm*10,1.6+stm*2,0,TAU);ctx.fill();
+  ctx.restore();
+  if(PA.lynT>0){
+    ctx.font='17px VT323,monospace';ctx.textAlign='center';
+    const w=ctx.measureText(PA.lyn).width+16;
+    ctx.fillStyle='rgba(10,14,7,.85)';ctx.fillRect(PA.x-w/2,PA.y-56,w,22);
+    ctx.strokeStyle='#5c4a2e';ctx.lineWidth=2;ctx.strokeRect(PA.x-w/2,PA.y-56,w,22);
+    ctx.fillStyle='#ece5cc';ctx.fillText(PA.lyn,PA.x,PA.y-40);
+  }
+}
+const VERWERS=[tekenGebou,tekenBoom,tekenMens,tekenHoender,tekenDwaler,tekenPa];
+function verwerId(fn){VERWERS.push(fn);return VERWERS.length-1;}
 function render(){
   if(!VW||!VH)return;
   ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -1639,57 +1716,7 @@ function render(){
   for(const d of DWALERS)if(vis(d.x,d.y,40))dinge.push([d.y,4,d]);
   dinge.push([PA.y,5,PA]);
   dinge.sort((a,b)=>a[0]-b[0]);
-  for(const [,t,d] of dinge){
-    if(t===0)tekenGebou(d);
-    else if(t===1)tekenBoom(d);
-    else if(t===2)tekenMens(d);
-    else if(t===3){
-      ctx.fillStyle='rgba(10,14,7,.3)';ctx.beginPath();ctx.ellipse(d.x,d.y+1,4,1.6,0,0,TAU);ctx.fill();
-      ctx.fillStyle='#ece5cc';ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.fill();
-      ctx.fillStyle='#c05038';ctx.fillRect(d.x+((d.vx>=0)?2:-3.4),d.y-8.5,1.6,1.8);
-      const pik=Math.sin(d.pik)>0.6?2:0;
-      ctx.fillStyle='#e0b64f';ctx.fillRect(d.x+((d.vx>=0)?3.4:-4.8),d.y-6+pik,1.6,1.2);
-      ctx.strokeStyle='rgba(20,24,14,.6)';ctx.lineWidth=1.2;
-      ctx.beginPath();ctx.ellipse(d.x,d.y-4,4.4,3.6,0,0,TAU);ctx.stroke();
-    }
-    else if(t===4){
-      const wip=Math.sin(d.tred)*1.6;
-      ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(d.x,d.y+2,8,3,0,0,TAU);ctx.fill();
-      ctx.save();ctx.translate(d.x,d.y+wip*.5);
-      ctx.fillStyle='#2b3a22';ctx.fillRect(-4,-6,3.5,7);ctx.fillRect(1,-6,3.5,7);
-      ctx.fillStyle='#4e6b34';ctx.fillRect(-5,-18,10,12);
-      ctx.fillStyle='rgba(226,240,180,.3)';ctx.fillRect(-5,-18,2.5,12);
-      ctx.fillStyle='#93a86c';ctx.fillRect(-4,-26,8,8);
-      ctx.fillStyle='#c04030';ctx.fillRect(-2.5,-23,2,2);ctx.fillRect(1,-23,2,2);
-      ctx.fillStyle='#4e6b34';ctx.fillRect(-9,-15+wip,4,3);ctx.fillRect(5,-15-wip,4,3);
-      ctx.strokeStyle='#14180e';ctx.lineWidth=2;
-      ctx.strokeRect(-5,-18,10,12);ctx.strokeRect(-4,-26,8,8);
-      ctx.restore();
-    }
-    else{  // PA
-      ctx.save();ctx.translate(PA.x,PA.y);
-      ctx.fillStyle='rgba(10,14,7,.35)';ctx.beginPath();ctx.ellipse(0,2,9,3.4,0,0,TAU);ctx.fill();
-      ctx.fillStyle='#2a1f12';ctx.fillRect(-4,-7,3.5,8);ctx.fillRect(1,-7,3.5,8);
-      ctx.fillStyle='#e8e6df';ctx.fillRect(-6,-21,12,14);
-      ctx.fillStyle='rgba(20,26,14,.18)';ctx.fillRect(2,-21,4,14);
-      ctx.fillStyle='#e2b18d';ctx.fillRect(-4.5,-29,9,8);
-      ctx.fillStyle='#d8d5cd';ctx.fillRect(-4.5,-31,9,3);
-      ctx.fillStyle='#ece5cc';ctx.fillRect(6,-18,5,6);
-      ctx.strokeStyle='#14180e';ctx.lineWidth=2;
-      ctx.strokeRect(-6,-21,12,14);ctx.strokeRect(-4.5,-29,9,8);ctx.strokeRect(6,-18,5,6);
-      const stm=(PA.steam%1.6)/1.6;
-      ctx.fillStyle='rgba(236,229,204,'+(0.5*(1-stm))+')';
-      ctx.beginPath();ctx.arc(8.5+Math.sin(PA.steam*3)*2,-22-stm*10,1.6+stm*2,0,TAU);ctx.fill();
-      ctx.restore();
-      if(PA.lynT>0){
-        ctx.font='17px VT323,monospace';ctx.textAlign='center';
-        const w=ctx.measureText(PA.lyn).width+16;
-        ctx.fillStyle='rgba(10,14,7,.85)';ctx.fillRect(PA.x-w/2,PA.y-56,w,22);
-        ctx.strokeStyle='#5c4a2e';ctx.lineWidth=2;ctx.strokeRect(PA.x-w/2,PA.y-56,w,22);
-        ctx.fillStyle='#ece5cc';ctx.fillText(PA.lyn,PA.x,PA.y-40);
-      }
-    }
-  }
+  for(const [,t,d] of dinge)VERWERS[t](d);   // sien VERWERS hieronder
   // klok-swaai
   if(klokSwaai>0){
     ctx.save();ctx.translate(KLOKPAAL.x+7,KLOKPAAL.y+6);
