@@ -138,13 +138,15 @@ body{background:var(--grond);color:var(--ink);font-family:'VT323',ui-monospace,m
   <div class="b gd" id="hGoudB" style="display:none">🪙 <b id="hGoud">0</b></div>
   <div class="b">👥 <b id="hPop">0</b><span class="dof" id="hBed"></span></div>
   <div class="b gl" id="hGeluk">🙂 <b id="hGl">50</b></div>
+  <div class="b" id="hVrees" style="display:none" title="Werktempo deur vrees">😨 <b id="hVr">0</b></div>
   <div id="dagwys">Dag 1</div>
   <a id="terug" href="index.html" title="Terug na Drie Broers">&larr;</a>
 </div>
 <div id="glkaart"><h4>DIE MENSE SE HUMEUR</h4><div id="glrye"></div></div>
 <div id="belkaart"><h4>BELASTING</h4><div id="belrye"></div></div>
 <div id="gebkaart"><h4 id="gkNaam">GEBOU</h4><div id="gkRye"></div>
-  <button class="kn" id="gkOpg" style="margin-top:8px;width:100%"></button></div>
+  <button class="kn" id="gkOpg" style="margin-top:8px;width:100%"></button>
+  <button class="kn rooi" id="gkSloop" style="margin-top:6px;width:100%;display:none"></button></div>
 <div id="brkaart"></div>
 <div id="prompt"></div>
 <div id="balk">
@@ -271,9 +273,34 @@ const GT={
              hek:true, enkel:true, hp:300, hoog:34, dik:17,
              mkleur:['#8a7658','#54432b','#b19a63'],
              help:'Mense stap deur. Dwalers nie. Sonder hom klim hulle oor.'},
+  /* GELIEFDE STRUKTURE — hulle produseer niks; hulle koop humeur met materiaal.
+     Die blombedding is die hout-pad, die beeld die klip-pad (klip is skaars:
+     een blok is 6s delf), en die kapel die laat-spel-belegging. */
+  blombed:  {naam:'Blombedding', ikoon:'🌼', koste:{hout:3},         w:56, h:38, mooi:2,
+             klein:true, sloopbaar:true, sê:'Jou ma het altyd blomme langs die pad geplant.',
+             help:'Blomme langs die pad. Klein, maar die mense sien dit elke dag.'},
+  beeld:    {naam:'Klipbeeld',   ikoon:'🗿', koste:{hout:1,klip:5},  w:44, h:46, mooi:5,
+             klein:true, sloopbaar:true, sê:'Nou lyk dit weer soos ’n plaas.',
+             help:'Oupa in klip. Die werf kry ’n hart.'},
+  kapel:    {naam:'Kapel',       ikoon:'⛪', koste:{hout:8,klip:6},  w:76, h:64, mooi:4, vergewe:5,
+             sloopbaar:true, sê:'Nou het hulle ’n plek om te gaan sit.',
+             help:'Vergewe ’n deel van die vrees. Die galg bly staan; die skuld word ligter.'},
+  /* GEVREESDE STRUKTURE — hulle produseer ook niks, maar hulle jaag ELKE paar
+     hande aan. `vrees` is die rou punt-waarde; die effek is nie lineêr nie
+     (sien dalend()) sodat drie galge nie drie keer soveel is nie. */
+  kaak:     {naam:'Die Kaak',    ikoon:'⛓️', koste:{hout:3},         w:52, h:40, vrees:5,
+             klein:true, sloopbaar:true, sê:'Een uur daarin en niemand is weer laat nie.',
+             help:'Wie draal, sit ’n uur daarin. Almal werk vinniger, almal onthou.'},
+  stok:     {naam:'Die Stok',    ikoon:'🪧', koste:{hout:4,klip:1},  w:44, h:48, vrees:9,
+             klein:true, sloopbaar:true, sê:'Hulle sal werk. Hulle sal ook onthou.',
+             help:'’n Paal met ’n riem. Vinniger hande, swaarder harte.'},
+  galg:     {naam:'Die Galg',    ikoon:'💀', koste:{hout:6,klip:2},  w:60, h:64, vrees:15,
+             klein:true, sloopbaar:true, sê:'Jou oupa sou dit nooit toegelaat het nie.',
+             help:'Almal sien hom van ver af. Die werk vlieg; niemand kom kuier nie.'},
 };
 const GT_ORDE=['skerm','huis','houthut','klipgroef','tuin','hoenderhok','visserhut','bakoond','spens','skathuis','mark','braai','hopland','brouery','kroeg','wagtoring',
-               'palissade','klipmuur','hekhuis'];
+               'palissade','klipmuur','hekhuis',
+               'blombed','beeld','kapel','kaak','stok','galg'];
 const ST_N=5;                                   // vyf sigbare stadiums
 function stKoste(t){                            // hoeveel vragte moet aangedra word
   const k=GT[t].koste; return (k.hout||0)+(k.klip||0);
@@ -315,6 +342,10 @@ const VLAKKE={
   /* MARK: die opgradering VERNOU die spreiding en vergroot die wa (kwota 8/12/20). */
   mark:     [{sprei:{v:1,k:1}},             {sprei:{v:1.15,k:.92},koste:{hout:6,klip:4}},
                                             {sprei:{v:1.30,k:.85},koste:{hout:9,klip:7}}],
+  /* VREES/SKOONHEID: die beeld en kapel groei aan die geliefde kant, die galg aan die gevreesde. */
+  beeld:    [{mooi:5},           {mooi:8, koste:{hout:1,klip:6}}],
+  kapel:    [{mooi:4,vergewe:5}, {mooi:7, vergewe:8, koste:{hout:6,klip:6}}],
+  galg:     [{vrees:15},         {vrees:21,koste:{hout:5,klip:3}}],
 };
 function gVlak(g){return g.vlak||1;}
 function beginOpgradeer(g){
@@ -791,7 +822,7 @@ function naasteBoom(x,y,maks){
    in stapNa "vervang" — sekwensieel toegepas oorleef net die laaste. Nou skryf 'n kenmerk
    sy eie veld op die mens (m.aSpoed vir 'n aura, m.aTempo vir vrees/werkywer) en raak
    stapNa nooit aan nie. */
-function spoedVan(m){return m.spd*((m.dra||m.help)?0.78:1)*(m.aSpoed||1)*(m.aTempo||1);}
+function spoedVan(m){return m.spd*((m.dra||m.help)?0.78:1)*(m.aSpoed||1)*(m.aTempo||1)*(1+(WTEMPO-1)*0.5);}   // vrees jaag ook die voete aan
 function stapNa(m,tx,ty,dt){
   /* MURE: staan 'n muur tussen hom en sy doel, word die hek 'n tussenpunt. Ons mag dan
      NOOIT true teruggee wanneer hy die tussenpunt bereik nie — die oproeper sou dink die
@@ -906,7 +937,7 @@ function mensTik(m,dt){
     const b=t.boom;
     if(b.toestand!=='staan'){b.geëis=Math.max(0,b.geëis-1);m.taak=null;break;}
     if(dist2(m.x,m.y,b.x,b.y)<34*34||stapNa(m,b.x-16*(m.x<b.x?1:-1),b.y+10,dt)){
-      m.slaan+=dt;
+      m.slaan+=dt*WTEMPO;
       if(m.slaan>=0.9){
         m.slaan=0;b.hp--;b.skud=0.14;
         spanne(b.x+rand(-8,8),b.y-b.r,3,'#c9b06a');klank(160+R()*40,.06,.1);
@@ -924,7 +955,7 @@ function mensTik(m,dt){
                            t.ty=KLIPBANK.y+Math.sin(a)*KLIPBANK.r*.45;}
       if(stapNa(m,t.tx,t.ty,dt)){t.fase=1;m.slaan=0;t.werk=0;}
     }else if(t.fase===1){
-      m.slaan+=dt;t.werk+=dt;
+      m.slaan+=dt*WTEMPO;t.werk+=dt*WTEMPO;
       if(m.slaan>=0.9){m.slaan=0;spanne(t.tx+rand(-8,8),t.ty-6,3,'#9aa0a2');klank(190,.05,.08);}
       if(t.werk>=6){                        // 'n blok klip gedelf
         m.dra='klip';t.fase=2;
@@ -963,7 +994,7 @@ function mensTik(m,dt){
       }
       if(stapNa(m,t.tx,t.ty,dt)){t.fase=1;t.werk=0;}
     }else if(t.fase===1){
-      t.werk+=dt;m.tred+=dt*2;
+      t.werk+=dt*WTEMPO;m.tred+=dt*2*WTEMPO;
       if(GK.brandstof&&m.dra){m.dra=null;spanne(g.x,g.y-10,3,'#e0632a');}  // hout gaan in die oond
       if(GK.rook)g.rook=T+1.2;                                             // rook terwyl hy bak
       if(t.werk>=werkT){
@@ -1070,10 +1101,10 @@ function mensTik(m,dt){
        ||stapNa(m,site.x+G2.w/2+12,site.y+10,dt)){
       const nodig=sDrempel(site,site.stadium);
       if(site.gelewer<nodig){m.slaan=0;m.tred+=dt*.8;break;}   // wag sigbaar
-      m.slaan+=dt;
+      m.slaan+=dt*WTEMPO;
       if(m.slaan>=.8){m.slaan=0;spanne(site.x+rand(-16,16),site.y-12,2,'#c9b06a');
         klank(210+site.stadium*30,.05,.09);}
-      site.werk+=dt*bouTempo(site);      // Louw se aura/krag versnel die bou
+      site.werk+=dt*bouTempo(site)*WTEMPO;   // Louw se aura/krag EN die vrees versnel die bou
       if(site.werk>=2.0){
         site.werk=0;site.verbruik=nodig;site.stadium++;
         klank(500,.09,.11);
@@ -1084,7 +1115,7 @@ function mensTik(m,dt){
             site.vlak=site.opgradeer; site.opgradeer=0;
             paSê(GT[site.tipe].naam+' is nou vlak '+site.vlak+'.');
             spanne(site.x,site.y-18,10,'#e8c96a');klank(780,.18,.13);
-          }else paSê(GT[site.tipe].naam+' staan.');
+          }else paSê(GT[site.tipe].sê||(GT[site.tipe].naam+' staan.'));   // Pa se iets as 'n galg klaarkom
           bemanGeboue();persistSoon();
         }
       }
@@ -1150,6 +1181,95 @@ function bemanGeboue(){
   }
 }
 
+/* ============================== VREES EN SKOONHEID ==============================
+   Stronghold se hart: 'n heer word BEMIN of GEVREES, en albei werk — net anders.
+   Ons hou by die dryf-model (gelukFaktore gee rye, dagDryf tel hulle EEN keer per
+   dag op) en voeg twee nuwe rye by. Die vrees doen egter iets wat geen ander ry
+   doen nie: hy raak die HANDE, nie net die humeur nie.
+
+     bemin  -> hoë geluk -> swerwers KOM aan -> meer monde, meer hande (wyd)
+     gevrees-> lae geluk -> niemand kom -> maar elke hand werk tot 48% vinniger,
+               en hulle DURF NIE LOOP NIE (die vertrek-drempel sak saam) (hoog)
+
+   Twee dinge hou dit 'n keuse in plaas van 'n straf:
+   1. die straf skaal met BEVOLKING — 'n galg op 'n plaas van ses is amper gratis,
+      op 'n plaas van twintig is hy dodelik. Vrees is dus die vroeë/klein pad;
+   2. die kapel vergewe 'n VASTE aantal punte sonder om die tempo te raak, so
+      "kaak + kapel" is skoon wins vir wie die som verstaan. */
+const VREES_TEMPO=0.02;                 // werktempo per punt effektiewe vrees
+let VREES_ROU=0, VREES_EFF=0, MOOI_EFF=0, VERGEWE=0, STRAF=0, WTEMPO=1;
+/* Dalende opbrengs met 'n plafon: sonder dit is die antwoord altyd "bou nog een".
+   Die eerste `vol` punte tel vol, daarna tel elke tweede, en `maks` sluit dit af. */
+function dalend(som,vol,maks){
+  if(som<=vol)return som;
+  return Math.min(maks,vol+Math.round((som-vol)/2));
+}
+/* EEN meting per raam. Alles hieronder lees net die gekapte waardes — gelukFaktore
+   loop elke raam vir die kaart, en 'n lus oor GEB per mens per raam sou dom wees. */
+function meetVrees(){
+  let vr=0,mo=0,vg=0;
+  for(const g of GEB){
+    if(!g.klaar)continue;                       // 'n halfgeboude galg dreig niemand
+    const G2=GT[g.tipe];
+    if(G2.vrees)vr+=gVrees(g);
+    if(G2.mooi)mo+=gMooi(g);
+    if(G2.vergewe)vg=Math.max(vg,gVergewe(g));  // die sterkste kapel tel, nie die som
+  }
+  VREES_EFF=dalend(vr,10,24);
+  MOOI_EFF=dalend(mo,4,9);
+  VERGEWE=vg;
+  /* Hoe meer mense, hoe swaarder weeg die galg: 6 mense -> x0.85, 12 -> x1.0,
+     20 -> x1.2, 24+ -> x1.3. Dit is die hele strategiese as. */
+  VREES_ROU=Math.round(VREES_EFF*(0.7+Math.min(MENSE.length,24)/40));
+  STRAF=Math.max(0,VREES_ROU-VERGEWE);
+  WTEMPO=1+VREES_EFF*VREES_TEMPO;
+}
+/* Vrees hou hulle vas. Die aankoms-drempel (50) skuif NOOIT — 'n gevreesde plaas
+   groei nie, hy hou net wat hy het. Die vloer van 16 is die breekpunt: onder daai
+   humeur loop hulle in elk geval, en dan kos mislukking iets werkliks. */
+function vertrekDrempel(){return Math.max(16,40-VREES_EFF);}
+function vreesNaam(){
+  if(tel('galg'))return 'Die galg staan';
+  if(tel('stok'))return 'Die stok staan';
+  return 'Die kaak staan';
+}
+function mooiNaam(){
+  if(tel('kapel'))return 'Die kapel en die werf';
+  if(tel('beeld'))return 'Die beeld op die werf';
+  return 'Blomme op die werf';
+}
+/* Vlak-bewuste lesers (langs gGl). vDat val terug op die GT-inskrywing, so 'n
+   tipe sonder VLAKKE-ry werk sonder verdere spesiale gevalle. */
+function gMooi(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.mooi!==undefined)?d.mooi:(GT[g.tipe].mooi||0);}
+function gVrees(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.vrees!==undefined)?d.vrees:(GT[g.tipe].vrees||0);}
+function gVergewe(g){const d=vDat(g.tipe,gVlak(g));return (d&&d.vergewe!==undefined)?d.vergewe:(GT[g.tipe].vergewe||0);}
+
+/* SLOOP — sonder dit is 'n galg 'n eenrigting-lokval: die geluk val, aankoms stop,
+   en die speler kan nooit weer terugdraai nie. Die materiaal kom NIE in die HUD
+   terug nie; dit val as vragte op die grond en iemand moet dit gaan haal. */
+function sloopKoste(g){
+  const k=GT[g.tipe].koste;
+  return {hout:Math.floor((k.hout||0)/2),klip:Math.floor((k.klip||0)/2)};
+}
+function sloop(g){
+  if(!g||!GT[g.tipe].sloopbaar)return false;
+  /* NET 'n klaar, stil gebou. 'n Bousite word deur lopende vat/bou-take vasgehou,
+     en 'n gesplitste site laat daardie take na 'n spook aflewer (opPad lek dan). */
+  if(!g.klaar||g.opgradeer||g.bouer){plToast('Kan hom nou nie sloop nie.');klank(150,.18,.1);return false;}
+  const i=GEB.indexOf(g);if(i<0)return false;
+  for(const w of g.werkers)if(w)w.werkplek=null;
+  GEB.splice(i,1);
+  const t=sloopKoste(g);
+  for(let n=0;n<t.hout;n++)VRAGTE.push({x:g.x+rand(-18,18),y:g.y+rand(6,20),soort:'hout',geëis:0});
+  for(let n=0;n<t.klip;n++)VRAGTE.push({x:g.x+rand(-18,18),y:g.y+rand(6,20),soort:'klip',geëis:0});
+  spanne(g.x,g.y-10,12,'#9aa0a2');klank(120,.3,.16);
+  plToast(GT[g.tipe].naam+' is gesloop.');
+  if(GEKIES===g)kiesGebou(null);
+  bemanGeboue();meetVrees();persistSoon();
+  return true;
+}
+
+
 /* ============================== GELUK ==============================
    STRONGHOLD SE MODEL, nie 'n toestandsmeter nie. Bron-navorsing:
    .claude/ontwerp/stronghold-meganika-2026-08-28.md (gemyn uit OpenSHC/Sourcehold
@@ -1178,7 +1298,8 @@ let GLRYE=[];
        speler kies watter gerief hy bou, en die dagstap self is geklem. */
 const GLBRONNE=[];
 const GLKAT={kos:[-10,8], dak:[-8,2], gerief:[-6,8], veiligheid:[-9,4], gebeurtenis:[-8,6],
-             belasting:[-15,5]};   // 'n HEFBOOM, nie 'n gerief: hy hou sy volle swaai
+             belasting:[-15,5],    // 'n HEFBOOM, nie 'n gerief: hy hou sy volle swaai
+             vrees:[-32,0]};       // die galg se straf skaal met bevolking — mag nie gekap word
 const GLSTAP=14;                                   // maksimum |dryf| per dag
 function gelukFaktore(){
   const rye=[];
@@ -1239,6 +1360,18 @@ GLBRONNE.push(rye=>{
   else rye.push(['Geen belasting',0,'belasting']);
 });
 GLBRONNE.push(rye=>{const vr=kosVariasieRy(hongerTel||hongerVorige,voorraad('kos'));if(vr)rye.push([vr[0],vr[1],'kos']);});
+/* ---- VREES deur die REGISTERS. 'n Eie klem-kategorie: die gebeurtenis-klem [-8,+6] sou die
+   galg by -8 kap en die hele "goedkoop op 'n klein plaas, ruïneus op 'n groot een" verdwyn.
+   Skoonheid ding mee in gerief (met die braai en die bier), stapel nie. */
+GLBRONNE.push(rye=>{
+  meetVrees();                                  // die kaart mag nooit ou syfers wys nie
+  if(MOOI_EFF>0)rye.push([mooiNaam(),MOOI_EFF,'gerief']);
+  if(VREES_EFF>0){
+    rye.push([vreesNaam(),-VREES_ROU,'vrees']);
+    if(VERGEWE>0)rye.push(['Die kapel vergewe',Math.min(VERGEWE,VREES_ROU),'vrees']);
+  }
+});
+
 function dagDryf(){                       // een keer per spel-dag
   const som=gelukFaktore();
   hongerVorige=hongerTel; hongerTel=0;    // rol die honger-venster oor
@@ -1726,7 +1859,8 @@ function bouBalk(){
     const b=document.createElement('button');
     b.className='kn'+(PLAAS===t?' aan':'')+(kanBekostig(t)?'':' kan_nie');
     const k=G2.koste;
-    const kt=[(k.hout?k.hout+'🪵':''),(k.klip?k.klip+'🪨':'')].filter(Boolean).join(' ');
+    const kt=[(k.hout?k.hout+'🪵':''),(k.klip?k.klip+'🪨':''),
+              (G2.mooi?'+'+G2.mooi+'🙂':''),(G2.vrees?'+'+G2.vrees+'😨':'')].filter(Boolean).join(' ');
     b.innerHTML=G2.ikoon+' '+G2.naam+'<small>'+kt+'</small>';
     b.onclick=()=>kiesBou(t);
     w.appendChild(b);
@@ -2045,6 +2179,9 @@ function kiesGebou(g){
     if(g.stil)rye.push(['Staan stil',g.stil]);}
   if(g.tipe==='houthut')rye.push(['Kap-bereik',Math.round(gBereik(g))+' tree']);
   if(G2.braai||G2.lig)rye.push(['Humeur',(gGl(g)>0?'+':'')+gGl(g)+' per dag']);
+  if(G2.mooi)rye.push(['Skoonheid','+'+gMooi(g)+' humeur/dag']);
+  if(G2.vergewe)rye.push(['Vergewe vrees','tot '+gVergewe(g)+' punte']);
+  if(G2.vrees){rye.push(['Vrees','+'+gVrees(g)]);rye.push(['Werktempo nou','+'+Math.round((WTEMPO-1)*100)+'%']);rye.push(['Hulle loop eers onder',vertrekDrempel()]);}
   if(!g.klaar)rye.push([g.opgradeer?'Word opgegradeer':'Word gebou',
                         g.gelewer+'/'+sKoste(g)+' vragte']);
   document.getElementById('gkRye').innerHTML=
@@ -2060,11 +2197,17 @@ function kiesGebou(g){
       '<small>'+(k.hout?k.hout+'🪵 ':'')+(k.klip?k.klip+'🪨':'')+'</small>';
     kn.disabled=!genoeg;
   }
+  {const sl=document.getElementById('gkSloop');
+   const mag=!!(G2.sloopbaar&&g.klaar&&!g.opgradeer);
+   sl.style.display=mag?'block':'none';
+   if(mag){const tr=sloopKoste(g);
+     sl.innerHTML='🧨 Sloop<small>'+((tr.hout||tr.klip)?'kry '+(tr.hout?tr.hout+'🪵 ':'')+(tr.klip?tr.klip+'🪨':'')+' terug':'niks kom terug nie')+'</small>';}}
   kaart.style.display='block';
 }
 document.getElementById('gkOpg').onclick=()=>{
   if(GEKIES&&beginOpgradeer(GEKIES))kiesGebou(GEKIES);
 };
+document.getElementById('gkSloop').onclick=()=>{if(GEKIES)sloop(GEKIES);};
 
 /* ============================== SPAN — GROEP-SELEKSIE EN BEVELE ==============================
    DIE MODUS-PROBLEEM IS DIE HELE ONTWERP. Ses dinge wil 'n tik hê: kamera-sleep,
@@ -2412,6 +2555,7 @@ let T=0, swerwerT=0, dwalerT=70, kosKlok=0, swerwerModus=0, hongerTel=0, hongerV
 let METE=false,mTye=[];
 function update(dt){
   randRol(dt);                 // kamera eerste — alles hierna sien reeds die nuwe uitsig
+  meetVrees();                 // dagDryf lees die gekapte syfers
   T+=dt;S.tyd+=dt;
   const nuweDag=1+Math.floor(S.tyd/VOLLEDAG);
   if(nuweDag!==S.dag){S.dag=nuweDag;dagDryf();persistSoon();}
@@ -2504,7 +2648,8 @@ function update(dt){
      vinnigste tempo nog steeds 'n dorp is en nie 'n stortvloed nie. */
   const mnd=monde();
   const kanVoed=kosVloei()>=mnd*4 && voorraad('kos')>=6+mnd*0.5;
-  const mod=(p>=50&&MENSE.length<bed&&kanVoed)?1:(p<40&&MENSE.length>3)?-1:0;
+  const vdr=vertrekDrempel();                   // vrees hou hulle vas (40 -> so laag as 16)
+  const mod=(p>=50&&MENSE.length<bed&&kanVoed)?1:(p<vdr&&MENSE.length>3)?-1:0;
   if(mod!==swerwerModus){swerwerModus=mod;swerwerT=mod?18:0;}
   if(p>=50&&MENSE.length<bed&&kanVoed&&!KLOKAAN){
     const km=0.08*Math.pow((100-p)/25,3)+0.09;
@@ -2518,7 +2663,7 @@ function update(dt){
       plToast(m.naam+' het by die plaas aangekom.');
       klank(560,.12,.1);bemanGeboue();persistSoon();
     }
-  }else if(p<40&&MENSE.length>3&&!KLOKAAN){
+  }else if(p<vdr&&MENSE.length>3&&!KLOKAAN){
     const km=0.08*p*p/500+0.1;
     swerwerT-=dt;
     if(swerwerT<=0){
@@ -2633,6 +2778,9 @@ function update(dt){
   document.getElementById('hPop').textContent=MENSE.length;
   document.getElementById('hBed').textContent='/'+bed;
   document.getElementById('hGl').textContent=S.geluk;
+  {const hv=document.getElementById('hVrees');
+   if(VREES_EFF>0){hv.style.display='block';document.getElementById('hVr').textContent='+'+Math.round((WTEMPO-1)*100)+'%';}
+   else hv.style.display='none';}
   document.getElementById('hGeluk').firstChild.textContent=
     (S.geluk>=70?'😀 ':S.geluk>=55?'🙂 ':S.geluk>=40?'😐 ':'☹️ ');
   document.getElementById('dagwys').textContent='Dag '+S.dag+(nagAlpha()>.3?' · nag':'');
@@ -2789,7 +2937,7 @@ function bierMensTik(m,dt,t){
       if(t.tx===undefined){t.tx=g.x+rand(-30,30);t.ty=g.y+rand(-16,16);}
       if(stapNa(m,t.tx,t.ty,dt)){t.fase=1;t.werk=0;}
     }else if(t.fase===1){
-      t.werk+=dt;m.tred+=dt*2;
+      t.werk+=dt*WTEMPO;m.tred+=dt*2*WTEMPO;
       if(t.werk>=HOP_PLUK){
         m.dra='hop';t.fase=2;
         const h=hoopVan('hop');t.hx=h.x+rand(-8,8);t.hy=h.y+rand(-4,10);
@@ -3565,6 +3713,7 @@ function tekenGebou(g){
     ctx.strokeRect(x-r,y-r,w+2*r,h+2*r);ctx.setLineDash([]);
   }
   if(G2.muur){tekenMuur(g,f);return;}   // mure teken hulself — hulle lees hul bure
+  if(G2.klein){tekenProp(g,x,y,w,h,f);return;}   // props: geen dak, geen muurvlak
   // werpskadu (groei saam met die dakrand, anders sweef die hoer vlakke)
   const sk=(gVlak(g)-1)*3;
   ctx.fillStyle='rgba(16,22,11,.28)';
@@ -3591,7 +3740,8 @@ function tekenGebou(g){
     braai:['#a24d3a','#7a3427','#8a7658'],wagtoring:['#8a8a7a','#6b6a5a','#9aa0a2'],
     hoenderhok:['#b7743f','#8a5730','#c9c0aa'],visserhut:['#6f8b9c','#4e6675','#c9c0aa'],bakoond:['#a2564a','#7a3a30','#c9c0aa'],
     skathuis:['#b9a06a','#7a6a3f','#8c8477'],mark:['#b9793f','#8a5a2c','#c9c0aa'],
-    hopland:['#6d8a3c','#4f6a2a','#8a6f3f'],brouery:['#8a6f3f','#6a4f30','#b9a06a'],kroeg:['#a2703a','#7a4f27','#c9c0aa']}[g.tipe]
+    hopland:['#6d8a3c','#4f6a2a','#8a6f3f'],brouery:['#8a6f3f','#6a4f30','#b9a06a'],kroeg:['#a2703a','#7a4f27','#c9c0aa'],
+    kapel:['#d8d2bd','#a89a78','#e6e0cc']}[g.tipe]
     ||['#8a7658','#6f5c44','#c9c0aa'];
   /* Beter materiaal: die muur word gekalk, die dak word dikker gedek. Een meng,
      geen tweede palet om uit pas te raak nie. */
@@ -3740,11 +3890,112 @@ function tekenGebou(g){
     ctx.fillStyle=g.opgradeer?'#e8c96a':'#e0b64f';
     ctx.fillRect(x+1,yT2-12,(w-2)*clamp(p,0,1),5);
   }
+  if(g.klaar&&g.tipe==='kapel'){               // die kruis bo die nok
+    ctx.strokeStyle='#e8dfc6';ctx.lineWidth=3;
+    ctx.beginPath();ctx.moveTo(g.x,y-20);ctx.lineTo(g.x,y-6);ctx.moveTo(g.x-5,y-16);ctx.lineTo(g.x+5,y-16);ctx.stroke();
+  }
   if(G2.mark)tekenMarkEkstra(g,x,y,w,h);     // die smous se wa en die krat-stapel
   if(G2.ketting==='bier')tekenBierDetail(g);   // hop-ranke, vate, die uithangbord
   /* Die vlak word nou in die SILHOEET gedra (gewelpen/banier/fondament/skoorsteen) —
      die ou goue pitte is weg: een merk per gebou, anders lees dit as ruis. */
 }
+
+function tekenProp(g,x,y,w,h,f){
+  const cx=x+w/2, gy=y+h;                       // gy is die voet: waar hy grond raak
+  ctx.fillStyle='rgba(16,22,11,.28)';
+  ctx.beginPath();ctx.ellipse(cx+3,gy-2,w*.34,5,0,0,TAU);ctx.fill();
+  if(f<0.2){                                    // penne en tou — nog net 'n plek
+    ctx.strokeStyle='#c9b06a';ctx.lineWidth=1.8;ctx.setLineDash([5,5]);
+    ctx.strokeRect(x,y,w,h);ctx.setLineDash([]);
+    ctx.fillStyle='#5d4a2c';
+    for(const [px,py] of [[x,y],[x+w,y],[x,y+h],[x+w,y+h]])ctx.fillRect(px-2,py-7,4,10);
+  }else if(g.tipe==='blombed'){
+    ctx.fillStyle='#5b4133';
+    ctx.beginPath();ctx.ellipse(cx,gy-8,w*.42,10,0,0,TAU);ctx.fill();
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.stroke();
+    const n=Math.max(1,Math.round(7*f));        // die blomme kom een-een op
+    for(let i=0;i<n;i++){
+      const px=cx-w*.32+i*(w*.64/6), py=gy-10-((i%2)?4:0);
+      ctx.strokeStyle='#3d5c2a';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(px,py-9);ctx.stroke();
+      ctx.fillStyle=['#e0b64f','#d86a7a','#e8e0c0','#c98ad0'][i%4];
+      ctx.beginPath();ctx.arc(px,py-11,3.2,0,TAU);ctx.fill();
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.2;ctx.stroke();
+    }
+  }else if(g.tipe==='beeld'){
+    const ph=10+6*f;                            // die voetstuk eerste
+    ctx.fillStyle='#8c8477';ctx.fillRect(cx-13,gy-ph,26,ph);
+    ctx.fillStyle='#a29a8c';ctx.fillRect(cx-13,gy-ph,4,ph);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(cx-13,gy-ph,26,ph);
+    if(f>=.5){                                  // dan styg die figuur uit die klip
+      const fh=(f-.5)/.5*18;
+      ctx.fillStyle='#9aa0a2';ctx.fillRect(cx-7,gy-ph-fh,14,fh);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(cx-7,gy-ph-fh,14,fh);
+      if(f>=1){                                 // kop en hoed heel laaste
+        ctx.fillStyle='#9aa0a2';ctx.fillRect(cx-5,gy-ph-27,10,9);
+        ctx.fillStyle='#8c8477';ctx.fillRect(cx-10,gy-ph-29,20,3);
+        ctx.strokeStyle='#14180e';ctx.lineWidth=2;
+        ctx.strokeRect(cx-5,gy-ph-27,10,9);ctx.strokeRect(cx-10,gy-ph-29,20,3);
+      }
+    }
+  }else if(g.tipe==='kaak'){
+    const ph=6+16*f;
+    ctx.fillStyle='#6f5636';ctx.fillRect(cx-20,gy-ph,5,ph);ctx.fillRect(cx+15,gy-ph,5,ph);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;
+    ctx.strokeRect(cx-20,gy-ph,5,ph);ctx.strokeRect(cx+15,gy-ph,5,ph);
+    if(f>=.6){
+      ctx.fillStyle='#5b4133';ctx.fillRect(cx-22,gy-ph-4,44,9);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(cx-22,gy-ph-4,44,9);
+      ctx.fillStyle='#14180e';                  // die twee gate — die hele storie
+      ctx.beginPath();ctx.arc(cx-9,gy-ph+.5,3,0,TAU);ctx.fill();
+      ctx.beginPath();ctx.arc(cx+9,gy-ph+.5,3,0,TAU);ctx.fill();
+    }
+  }else if(g.tipe==='stok'){
+    const ph=8+30*f;
+    ctx.fillStyle='#6f5636';ctx.fillRect(cx-4,gy-ph,8,ph);
+    ctx.fillStyle='#8a6f3f';ctx.fillRect(cx-4,gy-ph,2.5,ph);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=1.8;ctx.strokeRect(cx-4,gy-ph,8,ph);
+    if(f>=.7){
+      ctx.strokeStyle='#9aa0a2';ctx.lineWidth=2.2;        // die yster-ring
+      ctx.beginPath();ctx.arc(cx,gy-ph+9,5.5,0,TAU);ctx.stroke();
+      ctx.strokeStyle='#c9b06a';ctx.lineWidth=2;          // die riem hang
+      ctx.beginPath();ctx.moveTo(cx+4,gy-ph+11);
+      ctx.quadraticCurveTo(cx+14,gy-ph+22,cx+9,gy-7);ctx.stroke();
+    }
+  }else if(g.tipe==='galg'){
+    const ph=10+38*f;
+    ctx.fillStyle='#5b4133';ctx.fillRect(cx-22,gy-ph,6,ph);
+    ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(cx-22,gy-ph,6,ph);
+    if(f>=.5){                                  // dwarsbalk en skoorstut
+      ctx.fillStyle='#6f5636';ctx.fillRect(cx-24,gy-ph-6,44,7);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=2;ctx.strokeRect(cx-24,gy-ph-6,44,7);
+      ctx.fillStyle='#5b4133';ctx.fillRect(cx-16,gy-ph+2,14,5);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.6;ctx.strokeRect(cx-16,gy-ph+2,14,5);
+    }
+    if(f>=1){
+      /* Die tou swaai stadig. Beweging is hoekom die oog hom optel by uitgezoomde
+         kamera — 'n stil silhoeët van 60px verdwyn op 'n foon. */
+      const sw=Math.sin(performance.now()/900)*1.6;
+      ctx.strokeStyle='#c9b06a';ctx.lineWidth=2.4;
+      ctx.beginPath();ctx.moveTo(cx+13,gy-ph-1);ctx.lineTo(cx+13+sw,gy-ph+15);ctx.stroke();
+      ctx.beginPath();ctx.ellipse(cx+13+sw,gy-ph+20,5,5.5,0,0,TAU);ctx.stroke();
+    }
+  }
+  if(!g.klaar){                                 // dieselfde vorderingbalk as die geboue
+    const p=(g.stadium+(g.gelewer>=sDrempel(g,g.stadium)?g.werk/2.0:0))/ST_N;
+    ctx.fillStyle='rgba(10,14,7,.75)';ctx.fillRect(x,y-13,w,7);
+    ctx.fillStyle=g.opgradeer?'#e8c96a':'#e0b64f';
+    ctx.fillRect(x+1,y-12,(w-2)*clamp(p,0,1),5);
+    const oor=g.gelewer-g.verbruik;
+    for(let i=0;i<Math.min(oor,4);i++){
+      ctx.fillStyle='#8a6f3f';ctx.fillRect(x-4+i*11,y+h+4,17,7);
+      ctx.strokeStyle='#14180e';ctx.lineWidth=1.5;ctx.strokeRect(x-4+i*11,y+h+4,17,7);
+    }
+  }
+  vlakMerk(g,x,y,w,h);
+}
+
+
 
 const VLAK_N=3;
 /* gVlak() bestaan reeds (klem op VLAKKE[t].length) — die agent se weergawe is weggelaat. */
